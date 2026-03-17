@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Literal, List, Optional
+from io import StringIO
+from typing import Any, Dict, Literal, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import Asset, PriceData, PriceTimeframe, WatchStatus
+from models import Asset, AssetType, PriceData, PriceTimeframe, WatchStatus
 from schemas.asset import AssetCreate, AssetRead
 
 router = APIRouter(prefix="/api", tags=["market-data"])
@@ -52,6 +54,25 @@ class WatchStatusUpdateRequest(BaseModel):
 
     watch_status: WatchStatus
     watch_notes: Optional[str] = None
+
+
+class AssetCsvImportRequest(BaseModel):
+    """CSV import payload for watchlist/holding bulk updates."""
+
+    csv_content: str = Field(min_length=1)
+    dry_run: bool = False
+    create_missing: bool = True
+
+
+class AssetCsvImportResponse(BaseModel):
+    """Import summary with row-level validation errors."""
+
+    rows_total: int
+    rows_valid: int
+    created: int
+    updated: int
+    skipped: int
+    errors: List[str]
 
 
 @router.get("/prices/{symbol}", response_model=LatestPriceResponse)
@@ -210,6 +231,82 @@ async def update_watch_status(
     return AssetRead.model_validate(asset)
 
 
+@router.post("/assets/import", response_model=AssetCsvImportResponse)
+async def import_assets_from_csv(
+    payload: AssetCsvImportRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AssetCsvImportResponse:
+    """Bulk import assets from CSV to set watchlist/holding quickly.
+
+    Expected headers:
+    symbol,name,asset_type,exchange,watch_status,watch_notes,is_active
+    """
+    parsed_rows = _parse_csv_rows(payload.csv_content)
+    errors: List[str] = []
+    rows_valid = 0
+    created = 0
+    updated = 0
+    skipped = 0
+
+    for idx, row in enumerate(parsed_rows, start=2):
+        try:
+            normalized = _normalize_import_row(row)
+        except ValueError as exc:
+            errors.append("Zeile {0}: {1}".format(idx, str(exc)))
+            continue
+        rows_valid += 1
+        symbol = str(normalized["symbol"])
+        asset = await _get_asset_by_symbol(db, symbol)
+        if asset is None and not payload.create_missing:
+            skipped += 1
+            continue
+        if asset is None:
+            asset = Asset(
+                symbol=symbol,
+                name=str(normalized["name"]),
+                asset_type=AssetType(str(normalized["asset_type"])),
+                exchange=_nullable_str(normalized.get("exchange")),
+                watch_status=WatchStatus(str(normalized["watch_status"])),
+                watch_notes=_nullable_str(normalized.get("watch_notes")),
+                is_active=bool(normalized["is_active"]),
+            )
+            db.add(asset)
+            created += 1
+        else:
+            asset.name = str(normalized["name"])
+            asset.asset_type = AssetType(str(normalized["asset_type"]))
+            asset.exchange = _nullable_str(normalized.get("exchange"))
+            asset.watch_status = WatchStatus(str(normalized["watch_status"]))
+            asset.watch_notes = _nullable_str(normalized.get("watch_notes"))
+            asset.is_active = bool(normalized["is_active"])
+            updated += 1
+
+    if not payload.dry_run:
+        await db.commit()
+    else:
+        await db.rollback()
+        created = 0
+        updated = 0
+
+    return AssetCsvImportResponse(
+        rows_total=len(parsed_rows),
+        rows_valid=rows_valid,
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        errors=errors,
+    )
+
+
+@router.get("/assets/import-template")
+async def get_asset_import_template() -> Dict[str, Any]:
+    """Return CSV header + example row for frontend import helpers."""
+    return {
+        "header": "symbol,name,asset_type,exchange,watch_status,watch_notes,is_active",
+        "example": "AAPL,Apple Inc.,stock,NASDAQ,holding,Langfristig halten,true",
+    }
+
+
 async def _get_asset_by_symbol(db: AsyncSession, symbol: str) -> Optional[Asset]:
     query = select(Asset).where(Asset.symbol == symbol.upper().strip())
     return (await db.execute(query)).scalar_one_or_none()
@@ -230,3 +327,53 @@ async def _suggested_symbols(db: AsyncSession) -> set[str]:
         )
     )
     return set((await db.execute(query)).scalars().all())
+
+
+def _parse_csv_rows(csv_content: str) -> List[Dict[str, str]]:
+    stream = StringIO(csv_content.strip())
+    reader = csv.DictReader(stream)
+    if not reader.fieldnames:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV Header fehlt.")
+    required = {"symbol", "name", "asset_type", "exchange", "watch_status", "watch_notes", "is_active"}
+    provided = {item.strip() for item in reader.fieldnames if item}
+    missing = sorted(required - provided)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Fehlende CSV-Spalten: {0}".format(", ".join(missing)),
+        )
+    return [dict(row) for row in reader]
+
+
+def _normalize_import_row(row: Dict[str, str]) -> Dict[str, Any]:
+    symbol = (row.get("symbol") or "").upper().strip()
+    name = (row.get("name") or "").strip()
+    asset_type_text = (row.get("asset_type") or "").strip().lower()
+    watch_status_text = (row.get("watch_status") or "").strip().lower()
+    is_active_text = (row.get("is_active") or "").strip().lower()
+    if not symbol:
+        raise ValueError("symbol ist leer.")
+    if not name:
+        raise ValueError("name ist leer.")
+    if asset_type_text not in {AssetType.STOCK.value, AssetType.CRYPTO.value}:
+        raise ValueError("asset_type ungueltig: {0}".format(asset_type_text))
+    if watch_status_text not in {WatchStatus.NONE.value, WatchStatus.WATCHLIST.value, WatchStatus.HOLDING.value}:
+        raise ValueError("watch_status ungueltig: {0}".format(watch_status_text))
+    if is_active_text not in {"true", "false", "1", "0", "yes", "no"}:
+        raise ValueError("is_active ungueltig: {0}".format(is_active_text))
+    return {
+        "symbol": symbol,
+        "name": name,
+        "asset_type": asset_type_text,
+        "exchange": row.get("exchange"),
+        "watch_status": watch_status_text,
+        "watch_notes": row.get("watch_notes"),
+        "is_active": is_active_text in {"true", "1", "yes"},
+    }
+
+
+def _nullable_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None

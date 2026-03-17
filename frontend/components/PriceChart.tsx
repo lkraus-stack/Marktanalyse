@@ -14,10 +14,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { parseNumeric } from "@/lib/api";
 import type { PricePointResponse } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface PriceChartProps {
   data: PricePointResponse[] | undefined;
   isLoading: boolean;
+  heightClassName?: string;
+  className?: string;
 }
 
 interface CandlestickPoint {
@@ -38,7 +41,7 @@ function toUnixTimestamp(value: string): UTCTimestamp {
   return Math.floor(new Date(value).getTime() / 1000) as UTCTimestamp;
 }
 
-export function PriceChart({ data, isLoading }: PriceChartProps) {
+export function PriceChart({ data, isLoading, heightClassName, className }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -80,25 +83,30 @@ export function PriceChart({ data, isLoading }: PriceChartProps) {
       return;
     }
 
+    const initialWidth = containerRef.current.clientWidth || 800;
+    const initialHeight = containerRef.current.clientHeight || 420;
+
     const chart = createChart(containerRef.current, {
+      width: initialWidth,
+      height: initialHeight,
       layout: {
-        background: { type: ColorType.Solid, color: "#1a1a2e" },
-        textColor: "#cbd5e1",
+        background: { type: ColorType.Solid, color: "#0a0a14" },
+        textColor: "#94a3b8",
       },
       grid: {
-        vertLines: { color: "#1f2a44" },
-        horzLines: { color: "#1f2a44" },
+        vertLines: { color: "#1e1e3a88" },
+        horzLines: { color: "#1e1e3a88" },
       },
       rightPriceScale: {
-        borderColor: "#2a385b",
+        borderColor: "#1e1e3a",
       },
       timeScale: {
-        borderColor: "#2a385b",
+        borderColor: "#1e1e3a",
         timeVisible: true,
       },
       crosshair: {
-        vertLine: { color: "#334155" },
-        horzLine: { color: "#334155" },
+        vertLine: { color: "#64748b88" },
+        horzLine: { color: "#64748b88" },
       },
       localization: {
         locale: "de-DE",
@@ -167,16 +175,45 @@ export function PriceChart({ data, isLoading }: PriceChartProps) {
   }, [transformed]);
 
   if (isLoading) {
-    return <Skeleton className="h-[420px] w-full rounded-lg" />;
+    return <ChartSkeleton className={cn("h-[420px]", heightClassName, className)} />;
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex h-[420px] items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
+      <div
+        className={cn(
+          "flex h-[420px] items-center justify-center rounded-xl border border-border/70 bg-[#0a0a14] text-sm text-muted-foreground",
+          heightClassName,
+          className
+        )}
+      >
         Keine Kursdaten verfuegbar.
       </div>
     );
   }
 
-  return <div ref={containerRef} className="h-[420px] w-full rounded-lg" />;
+  return <div ref={containerRef} className={cn("h-[420px] w-full rounded-xl", heightClassName, className)} />;
+}
+
+function ChartSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("relative w-full overflow-hidden rounded-xl border border-border/70 bg-[#0a0a14]", className)}>
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(30,30,58,0.2)_1px,transparent_1px),linear-gradient(180deg,rgba(30,30,58,0.2)_1px,transparent_1px)] bg-[size:28px_28px]" />
+      <div className="absolute inset-x-0 bottom-0 h-[22%] bg-gradient-to-t from-blue-500/10 to-transparent" />
+      <div className="absolute left-0 right-0 top-[42%] h-px border-t border-dashed border-slate-600/50" />
+      <div className="absolute inset-0 px-6 py-8">
+        <Skeleton className="h-full w-full rounded-[10px] bg-transparent" />
+        <svg viewBox="0 0 100 30" className="absolute inset-x-6 top-1/2 h-24 -translate-y-1/2 text-slate-500/70">
+          <path
+            d="M0 23 L10 16 L18 18 L28 10 L35 14 L45 8 L57 12 L67 7 L76 11 L86 6 L100 9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </div>
+  );
 }

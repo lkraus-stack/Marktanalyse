@@ -1,39 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --radius: 0.75rem;
+  --radius: 0.875rem;
 
-  --background: 235 40% 11%;
-  --foreground: 210 40% 98%;
+  --background: 240 33% 6%;
+  --foreground: 214 32% 91%;
 
-  --card: 233 36% 14%;
-  --card-foreground: 210 40% 98%;
+  --card: 240 25% 9%;
+  --card-foreground: 214 32% 91%;
 
-  --popover: 233 36% 14%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 240 25% 9%;
+  --popover-foreground: 214 32% 91%;
 
   --primary: 217 91% 60%;
-  --primary-foreground: 210 40% 98%;
+  --primary-foreground: 214 32% 91%;
 
-  --secondary: 226 27% 20%;
-  --secondary-foreground: 210 40% 96%;
+  --secondary: 240 27% 14%;
+  --secondary-foreground: 214 32% 91%;
 
-  --muted: 226 24% 18%;
-  --muted-foreground: 215 20% 70%;
+  --muted: 240 21% 13%;
+  --muted-foreground: 215 20% 65%;
 
-  --accent: 226 24% 24%;
-  --accent-foreground: 210 40% 98%;
+  --accent: 240 27% 14%;
+  --accent-foreground: 214 32% 91%;
 
-  --destructive: 0 73% 54%;
-  --border: 228 21% 30%;
-  --input: 228 21% 30%;
+  --destructive: 0 84% 60%;
+  --border: 240 32% 17%;
+  --input: 240 32% 17%;
   --ring: 217 91% 60%;
 
-  --chart-1: 140 68% 45%;
-  --chart-2: 0 72% 52%;
-  --chart-3: 215 100% 62%;
-  --chart-4: 45 93% 55%;
-  --chart-5: 270 95% 66%;
+  --chart-1: 142 71% 45%;
+  --chart-2: 0 84% 60%;
+  --chart-3: 217 91% 60%;
+  --chart-4: 38 92% 50%;
+  --chart-5: 260 84% 68%;
 }
 
 @theme inline {
@@ -69,17 +69,28 @@
 
 * {
   border-color: hsl(var(--border));
+  box-sizing: border-box;
 }
 
 html,
 body {
   margin: 0;
   min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
   min-height: 100vh;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-  font-family: Inter, Arial, Helvetica, sans-serif;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: hsl(var(--foreground));
+}
+
+.font-mono {
+  font-feature-settings: "tnum" 1, "ss01" 1;
 }

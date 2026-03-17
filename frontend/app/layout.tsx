@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { AppSidebar } from "@/components/layout/app-sidebar";
+import { AppShell } from "@/components/layout/app-shell";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeStyles } from "@/src/components/ui/theme";
 
 import "./globals.css";
 
@@ -19,10 +20,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="de" className="dark">
       <body className="bg-background text-foreground antialiased">
-        <div className="flex min-h-screen flex-col lg:flex-row">
-          <AppSidebar />
-          <main className="flex-1 p-6 lg:p-10">{children}</main>
-        </div>
+        <ThemeStyles />
+        <AppShell>{children}</AppShell>
         <Toaster position="top-right" richColors />
       </body>
     </html>

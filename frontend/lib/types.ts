@@ -53,6 +53,29 @@ export interface SignalRecommendationResponse {
   expires_at: string | null;
 }
 
+export interface SignalResponse {
+  symbol: string;
+  signal_type: "buy" | "sell" | "hold";
+  strength: number;
+  composite_score: number;
+  price_at_signal: string | number;
+  sentiment_component: number;
+  technical_component: number;
+  volume_component: number;
+  momentum_component: number;
+  reasoning: string;
+  execution_id: string | null;
+  strategy_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface SignalLeaderboardResponse {
+  top_buy: SignalResponse[];
+  top_sell: SignalResponse[];
+}
+
 export interface SignalPipelineStatusResponse {
   assets_total: number;
   price_points_1m: number;
@@ -71,6 +94,28 @@ export interface SocialStatsResponse {
   negative_count: number;
   neutral_count: number;
   avg_sentiment_score: number | null;
+}
+
+export interface SocialFeedItemResponse {
+  id: number;
+  source: "reddit" | "stocktwits" | "news" | "twitter" | "perplexity";
+  text_snippet: string;
+  sentiment_score: number | null;
+  sentiment_label: "positive" | "neutral" | "negative" | null;
+  model_used: string | null;
+  confidence: number | null;
+  source_url: string | null;
+  author: string | null;
+  created_at: string;
+}
+
+export interface SentimentSnapshotResponse {
+  symbol: string;
+  score: number | null;
+  label: "positive" | "neutral" | "negative";
+  mentions_1h: number;
+  mentions_1d: number;
+  updated_at: string | null;
 }
 
 export interface PriceUpdateMessage {

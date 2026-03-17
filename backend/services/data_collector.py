@@ -6,6 +6,7 @@ from decimal import Decimal
 import logging
 from typing import Any, Dict, List, Optional, Sequence
 
+import httpx
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -60,6 +61,10 @@ class DataCollector:
         self._stocktwits = stocktwits_service or StockTwitsService()
         self._news = news_service or NewsService()
         self._perplexity = perplexity_service or PerplexityService()
+        self._yahoo = httpx.AsyncClient(
+            timeout=httpx.Timeout(20.0),
+            headers={"User-Agent": "markt-intelligence/0.1"},
+        )
         self._ws_tasks: List[asyncio.Task[None]] = []
 
     async def collect_stock_prices(self) -> int:
@@ -252,6 +257,7 @@ class DataCollector:
             self._stocktwits.close(),
             self._news.close(),
             self._perplexity.close(),
+            self._yahoo.aclose(),
         )
 
     async def _fetch_crypto_snapshot(self, symbol: str) -> Dict[str, Any]:
@@ -301,35 +307,21 @@ class DataCollector:
             return rows[-limit:], "binance_h1_backfill"
 
         if asset.asset_type == AssetType.STOCK:
-            if not self._finnhub.has_api_key():
-                return [], "finnhub_h1_backfill"
-            now_ts = int(datetime.now(timezone.utc).timestamp())
-            from_ts = now_ts - (90 * 24 * 3600)
-            payload = await self._finnhub.get_candles(asset.symbol, resolution="60", from_ts=from_ts, to_ts=now_ts)
-            if str(payload.get("s", "")).lower() != "ok":
-                return [], "finnhub_h1_backfill"
-            ts = payload.get("t") or []
-            opens = payload.get("o") or []
-            highs = payload.get("h") or []
-            lows = payload.get("l") or []
-            closes = payload.get("c") or []
-            volumes = payload.get("v") or []
-            rows = []
-            for idx, value in enumerate(ts):
+            if self._finnhub.has_api_key():
                 try:
-                    rows.append(
-                        {
-                            "timestamp": self._timestamp_from_unix(value),
-                            "open_price": self._to_decimal(opens[idx]),
-                            "high_price": self._to_decimal(highs[idx]),
-                            "low_price": self._to_decimal(lows[idx]),
-                            "close_price": self._to_decimal(closes[idx]),
-                            "volume": float(volumes[idx]),
-                        }
-                    )
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    from_ts = now_ts - (90 * 24 * 3600)
+                    payload = await self._finnhub.get_candles(asset.symbol, resolution="60", from_ts=from_ts, to_ts=now_ts)
+                    rows = self._rows_from_finnhub_candles(payload)
+                    if rows:
+                        return rows[-limit:], "finnhub_h1_backfill"
                 except Exception:
-                    continue
-            return rows[-limit:], "finnhub_h1_backfill"
+                    logger.warning(
+                        "Finnhub H1 backfill unavailable, using Yahoo fallback.",
+                        extra={"event": "finnhub_h1_fallback", "symbol": asset.symbol},
+                    )
+            rows = await self._fetch_yahoo_candles(asset.symbol, interval="60m", range_value="3mo")
+            return rows[-limit:], "yahoo_h1_backfill"
 
         return [], "unknown_h1_backfill"
 
@@ -353,35 +345,20 @@ class DataCollector:
         return 0
 
     async def _fetch_stock_m1_points(self, asset: Asset, days: int) -> List[Dict[str, Any]]:
-        if not self._finnhub.has_api_key():
-            return []
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-        from_ts = now_ts - (max(1, days) * 24 * 3600)
-        payload = await self._finnhub.get_candles(asset.symbol, resolution="1", from_ts=from_ts, to_ts=now_ts)
-        if str(payload.get("s", "")).lower() != "ok":
-            return []
-        timestamps = payload.get("t") or []
-        opens = payload.get("o") or []
-        highs = payload.get("h") or []
-        lows = payload.get("l") or []
-        closes = payload.get("c") or []
-        volumes = payload.get("v") or []
-        points: List[Dict[str, Any]] = []
-        for idx, unix_ts in enumerate(timestamps):
+        if self._finnhub.has_api_key():
             try:
-                points.append(
-                    {
-                        "timestamp": self._timestamp_from_unix(unix_ts),
-                        "open_price": self._to_decimal(opens[idx]),
-                        "high_price": self._to_decimal(highs[idx]),
-                        "low_price": self._to_decimal(lows[idx]),
-                        "close_price": self._to_decimal(closes[idx]),
-                        "volume": float(volumes[idx]),
-                    }
-                )
+                now_ts = int(datetime.now(timezone.utc).timestamp())
+                from_ts = now_ts - (max(1, days) * 24 * 3600)
+                payload = await self._finnhub.get_candles(asset.symbol, resolution="1", from_ts=from_ts, to_ts=now_ts)
+                rows = self._rows_from_finnhub_candles(payload)
+                if rows:
+                    return rows
             except Exception:
-                continue
-        return points
+                logger.warning(
+                    "Finnhub M1 backfill unavailable, using Yahoo fallback.",
+                    extra={"event": "finnhub_m1_fallback", "symbol": asset.symbol},
+                )
+        return await self._fetch_yahoo_candles(asset.symbol, interval="1m", range_value="7d")
 
     async def _fetch_and_store_crypto_m1_points(self, asset: Asset, days: int) -> int:
         total_saved = 0
@@ -792,6 +769,73 @@ class DataCollector:
         stocks = ", ".join(topics.get("stocks", [])[:5]) or "n/a"
         crypto = ", ".join(topics.get("crypto", [])[:5]) or "n/a"
         return "Trending stocks: {0}. Trending crypto: {1}.".format(stocks, crypto)
+
+    def _rows_from_finnhub_candles(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if str(payload.get("s", "")).lower() != "ok":
+            return []
+        timestamps = payload.get("t") or []
+        opens = payload.get("o") or []
+        highs = payload.get("h") or []
+        lows = payload.get("l") or []
+        closes = payload.get("c") or []
+        volumes = payload.get("v") or []
+        rows: List[Dict[str, Any]] = []
+        for idx, unix_ts in enumerate(timestamps):
+            try:
+                rows.append(
+                    {
+                        "timestamp": self._timestamp_from_unix(unix_ts),
+                        "open_price": self._to_decimal(opens[idx]),
+                        "high_price": self._to_decimal(highs[idx]),
+                        "low_price": self._to_decimal(lows[idx]),
+                        "close_price": self._to_decimal(closes[idx]),
+                        "volume": float(volumes[idx]),
+                    }
+                )
+            except Exception:
+                continue
+        return rows
+
+    async def _fetch_yahoo_candles(self, symbol: str, interval: str, range_value: str) -> List[Dict[str, Any]]:
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/{0}".format(symbol.upper())
+        response = await self._yahoo.get(url, params={"interval": interval, "range": range_value})
+        response.raise_for_status()
+        payload = response.json()
+        chart = payload.get("chart", {})
+        result = (chart.get("result") or [None])[0]
+        if not result:
+            return []
+        timestamps = result.get("timestamp") or []
+        indicators = result.get("indicators", {})
+        quote = (indicators.get("quote") or [{}])[0]
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+        points: List[Dict[str, Any]] = []
+        for idx, unix_ts in enumerate(timestamps):
+            try:
+                close_value = closes[idx]
+                if close_value is None:
+                    continue
+                open_value = opens[idx] if idx < len(opens) and opens[idx] is not None else close_value
+                high_value = highs[idx] if idx < len(highs) and highs[idx] is not None else close_value
+                low_value = lows[idx] if idx < len(lows) and lows[idx] is not None else close_value
+                volume_value = volumes[idx] if idx < len(volumes) and volumes[idx] is not None else 0.0
+                points.append(
+                    {
+                        "timestamp": self._timestamp_from_unix(unix_ts),
+                        "open_price": self._to_decimal(open_value),
+                        "high_price": self._to_decimal(high_value),
+                        "low_price": self._to_decimal(low_value),
+                        "close_price": self._to_decimal(close_value),
+                        "volume": float(volume_value),
+                    }
+                )
+            except Exception:
+                continue
+        return points
 
     def _parse_datetime(self, value: Any) -> datetime:
         if isinstance(value, datetime):

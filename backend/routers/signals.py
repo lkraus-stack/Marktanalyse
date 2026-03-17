@@ -6,7 +6,7 @@ from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import AsyncSessionLocal, get_db
@@ -158,6 +158,11 @@ async def get_signal_recommendations(
 ) -> List[SignalRecommendationResponse]:
     """Return signal-driven tool suggestions (buy/sell/optional hold)."""
     now = datetime.now(timezone.utc)
+    priority = case(
+        (TradingSignal.signal_type == SignalType.BUY, 0),
+        (TradingSignal.signal_type == SignalType.SELL, 1),
+        else_=2,
+    )
     query = (
         select(TradingSignal, Asset)
         .join(Asset, TradingSignal.asset_id == Asset.id)
@@ -167,7 +172,7 @@ async def get_signal_recommendations(
             or_(TradingSignal.expires_at.is_(None), TradingSignal.expires_at > now),
             Asset.is_active.is_(True),
         )
-        .order_by(TradingSignal.strength.desc(), TradingSignal.created_at.desc())
+        .order_by(priority.asc(), TradingSignal.strength.desc(), TradingSignal.created_at.desc())
         .limit(limit)
     )
     if direction == "buy":

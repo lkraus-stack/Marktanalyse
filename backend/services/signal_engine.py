@@ -97,13 +97,20 @@ class SignalEngine:
                 momentum=momentum_score,
                 weights=effective_weights,
             )
-            signal_type = self._signal_type_from_score(composite)
+            buy_threshold, sell_threshold, threshold_meta = self._adaptive_thresholds(market_frame)
+            signal_type = self._signal_type_from_score(
+                composite=composite,
+                buy_threshold=buy_threshold,
+                sell_threshold=sell_threshold,
+            )
             strength = min(100.0, abs(composite))
             expires_at = self._expires_at(timeframe_enum)
             price_at_signal = Decimal(str(float(analysis_frame["close"].iloc[-1])))
             reasoning = self._build_reasoning(
                 composite=composite,
                 signal_type=signal_type,
+                buy_threshold=buy_threshold,
+                sell_threshold=sell_threshold,
                 sentiment_score=sentiment_score,
                 technical_score=technical_score,
                 volume_score=volume_score,
@@ -112,6 +119,7 @@ class SignalEngine:
                 technical_meta=technical_meta,
                 volume_meta=volume_meta,
                 momentum_meta=momentum_meta,
+                threshold_meta=threshold_meta,
                 weights=effective_weights,
                 coverage=coverage,
             )
@@ -376,10 +384,15 @@ class SignalEngine:
             return {name: 0.0 for name in self._weights.keys()}
         return {name: (active.get(name, 0.0) / total) for name in self._weights.keys()}
 
-    def _signal_type_from_score(self, composite: float) -> SignalType:
-        if composite > 30.0:
+    def _signal_type_from_score(
+        self,
+        composite: float,
+        buy_threshold: float,
+        sell_threshold: float,
+    ) -> SignalType:
+        if composite >= buy_threshold:
             return SignalType.BUY
-        if composite < -30.0:
+        if composite <= sell_threshold:
             return SignalType.SELL
         return SignalType.HOLD
 
@@ -395,6 +408,8 @@ class SignalEngine:
         self,
         composite: float,
         signal_type: SignalType,
+        buy_threshold: float,
+        sell_threshold: float,
         sentiment_score: float,
         technical_score: float,
         volume_score: float,
@@ -403,6 +418,7 @@ class SignalEngine:
         technical_meta: Mapping[str, Any],
         volume_meta: Mapping[str, Any],
         momentum_meta: Mapping[str, Any],
+        threshold_meta: Mapping[str, Any],
         weights: Mapping[str, float],
         coverage: float,
     ) -> str:
@@ -469,7 +485,36 @@ class SignalEngine:
                 float(weights["momentum"]),
             )
         )
+        if threshold_meta.get("adaptive"):
+            parts.append(
+                "Adaptive Schwellen BUY>={0:.1f}, SELL<={1:.1f}, Volatilitaet {2:.2f}%.".format(
+                    buy_threshold,
+                    sell_threshold,
+                    float(threshold_meta.get("volatility_pct", 0.0)),
+                )
+            )
+        else:
+            parts.append(
+                "Standard-Schwellen BUY>={0:.1f}, SELL<={1:.1f}.".format(
+                    buy_threshold,
+                    sell_threshold,
+                )
+            )
         return " ".join(parts)
+
+    def _adaptive_thresholds(self, market_frame: pd.DataFrame) -> tuple[float, float, Dict[str, Any]]:
+        if market_frame.empty or len(market_frame) < 500:
+            return 30.0, -30.0, {"adaptive": False, "volatility_pct": None}
+        returns = market_frame["close"].pct_change().dropna() * 100.0
+        if returns.empty:
+            return 30.0, -30.0, {"adaptive": False, "volatility_pct": None}
+        sample = returns.tail(1440)
+        volatility_pct = float(sample.std(ddof=0))
+        if not math.isfinite(volatility_pct):
+            return 30.0, -30.0, {"adaptive": False, "volatility_pct": None}
+        buy_threshold = max(18.0, min(40.0, 24.0 + (1.2 * volatility_pct)))
+        sell_threshold = -buy_threshold
+        return buy_threshold, sell_threshold, {"adaptive": True, "volatility_pct": volatility_pct}
 
     def _rows_to_frame(self, rows: Iterable[PriceData]) -> pd.DataFrame:
         entries = [

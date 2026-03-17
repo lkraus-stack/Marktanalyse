@@ -193,6 +193,8 @@ Vorlagen liegen in `backend/.env.example`:
 - `GET /api/assets`: alle Assets inklusive letztem Preis (`scope=all|watchlist|holding`)
 - `POST /api/assets`: neues Asset anlegen (Default `watch_status=watchlist`)
 - `PATCH /api/assets/{symbol}/watch`: Asset als `none|watchlist|holding` markieren
+- `POST /api/assets/import`: CSV-Import fuer Watchlist/Holdings (Bulk Upsert)
+- `GET /api/assets/import-template`: CSV-Header + Beispielzeile
 
 ## Phase 4 Social Data APIs
 
@@ -230,6 +232,7 @@ Wenn aktuell keine Signale angezeigt werden, sind fast immer `price_data` und/od
    - `GET /api/signals/pipeline-status`
 5. Erwartung:
    - Fuer Krypto sollten nach dem Bootstrap genug M1/H1 Candles vorhanden sein, damit Momentum/Volume/Technik nicht mehr dauerhaft neutral sind.
+   - Fuer Aktien nutzt das System Finnhub (Quote/News). Falls Finnhub-Candle-Endpunkte `403` liefern, greift automatisch ein Yahoo-Chart-Fallback fuer M1/H1-Backfill.
 
 ## Phase 8 Alert APIs
 

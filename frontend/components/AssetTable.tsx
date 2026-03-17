@@ -1,80 +1,50 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Inbox, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { mutate } from "swr";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MiniSparkline } from "@/components/ui/mini-sparkline";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { toast } from "@/components/ui/toast";
-import { apiHeaders, formatCurrency, formatPercent } from "@/lib/api";
 import type { AssetTableRow } from "@/lib/types";
+import { formatCurrency, formatPercent } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { signalToneClasses } from "@/src/components/ui/theme";
 
 type SortableColumn = "symbol" | "price" | "change24h" | "sentimentScore" | "mentions";
 type SortDirection = "asc" | "desc";
 type AssetFilter = "all" | "stock" | "crypto";
-type ListFilter = "all" | "suggested" | "watchlist" | "holding";
 
 interface AssetTableProps {
   rows: AssetTableRow[] | undefined;
   isLoading: boolean;
+  sparklineBySymbol?: Record<string, number[]>;
 }
 
-function getSignalVariant(signal: AssetTableRow["signal"]): "default" | "secondary" | "destructive" {
-  if (signal === "buy") {
-    return "default";
+function numericSortValue(value: string | number | null): number {
+  if (value === null) {
+    return Number.NEGATIVE_INFINITY;
   }
-  if (signal === "sell") {
-    return "destructive";
+  if (typeof value === "string") {
+    return Number.parseFloat(value);
   }
-  return "secondary";
+  return value;
 }
 
-export function AssetTable({ rows, isLoading }: AssetTableProps) {
+export function AssetTable({ rows, isLoading, sparklineBySymbol }: AssetTableProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AssetFilter>("all");
-  const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [sortColumn, setSortColumn] = useState<SortableColumn>("mentions");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [updatingSymbol, setUpdatingSymbol] = useState<string | null>(null);
 
   const filteredRows = useMemo(() => {
-    const lowerQuery = query.trim().toLowerCase();
     const source = rows ?? [];
+    const lowerQuery = query.trim().toLowerCase();
 
     const byFilter = source.filter((row) => (filter === "all" ? true : row.assetType === filter));
-    const byList = byFilter.filter((row) => {
-      if (listFilter === "all") {
-        return true;
-      }
-      if (listFilter === "suggested") {
-        return row.isToolSuggested;
-      }
-      if (listFilter === "watchlist") {
-        return row.watchStatus === "watchlist";
-      }
-      return row.watchStatus === "holding";
-    });
-    const byQuery = byList.filter((row) => {
+    const byQuery = byFilter.filter((row) => {
       if (!lowerQuery) {
         return true;
       }
@@ -89,55 +59,17 @@ export function AssetTable({ rows, isLoading }: AssetTableProps) {
       if (typeof leftValue === "string" && typeof rightValue === "string") {
         return leftValue.localeCompare(rightValue) * direction;
       }
-
-      const safeLeft = leftValue === null ? Number.NEGATIVE_INFINITY : Number(leftValue);
-      const safeRight = rightValue === null ? Number.NEGATIVE_INFINITY : Number(rightValue);
-      return (safeLeft - safeRight) * direction;
+      return (numericSortValue(leftValue) - numericSortValue(rightValue)) * direction;
     });
 
     return sorted;
-  }, [filter, listFilter, query, rows, sortColumn, sortDirection]);
-
-  const toggleSort = (column: SortableColumn) => {
-    if (sortColumn === column) {
-      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-      return;
-    }
-    setSortColumn(column);
-    setSortDirection("desc");
-  };
-
-  const updateWatchStatus = async (
-    symbol: string,
-    watchStatus: "none" | "watchlist" | "holding"
-  ) => {
-    setUpdatingSymbol(symbol);
-    try {
-      const response = await fetch(`/api/assets/${symbol}/watch`, {
-        method: "PATCH",
-        headers: apiHeaders(true),
-        body: JSON.stringify({ watch_status: watchStatus }),
-      });
-      if (!response.ok) {
-        throw new Error("watch update failed");
-      }
-      toast.success(`Status fuer ${symbol} gespeichert.`);
-      await Promise.all([
-        mutate("/api/assets"),
-        mutate("/api/signals/recommendations?direction=all&include_hold=true&min_strength=0&limit=8"),
-      ]);
-    } catch {
-      toast.error(`Status fuer ${symbol} konnte nicht gespeichert werden.`);
-    } finally {
-      setUpdatingSymbol(null);
-    }
-  };
+  }, [filter, query, rows, sortColumn, sortDirection]);
 
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <Skeleton key={index} className="h-12 w-full" />
+        {Array.from({ length: 8 }).map((_, index) => (
+          <Skeleton key={index} className="h-14 w-full rounded-xl" />
         ))}
       </div>
     );
@@ -145,178 +77,181 @@ export function AssetTable({ rows, isLoading }: AssetTableProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="relative w-full md:max-w-sm">
-          <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:max-w-sm">
+          <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Asset suchen..."
-            className="h-10 w-full rounded-md border border-input bg-background px-9 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/30"
+            className="h-10 w-full rounded-lg border border-border/70 bg-[#0d0f1c] px-9 text-sm text-slate-100 outline-none transition focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
-        <div className="flex w-full gap-2 md:w-auto">
-          <Select value={filter} onValueChange={(value) => setFilter(value as AssetFilter)}>
-            <SelectTrigger className="w-full md:w-44">
-              <SelectValue placeholder="Asset-Typ" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle</SelectItem>
-              <SelectItem value="stock">Aktien</SelectItem>
-              <SelectItem value="crypto">Krypto</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={listFilter} onValueChange={(value) => setListFilter(value as ListFilter)}>
-            <SelectTrigger className="w-full md:w-44">
-              <SelectValue placeholder="Liste" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle Listen</SelectItem>
-              <SelectItem value="suggested">Tool Vorschlaege</SelectItem>
-              <SelectItem value="watchlist">Watchlist</SelectItem>
-              <SelectItem value="holding">Holding</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex gap-2">
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as AssetFilter)}
+            className="h-10 rounded-lg border border-border/70 bg-[#0d0f1c] px-3 text-sm text-slate-100 outline-none"
+          >
+            <option value="all">Alle</option>
+            <option value="stock">Aktien</option>
+            <option value="crypto">Krypto</option>
+          </select>
+          <select
+            value={`${sortColumn}:${sortDirection}`}
+            onChange={(event) => {
+              const [column, direction] = event.target.value.split(":");
+              setSortColumn(column as SortableColumn);
+              setSortDirection(direction as SortDirection);
+            }}
+            className="h-10 rounded-lg border border-border/70 bg-[#0d0f1c] px-3 text-sm text-slate-100 outline-none"
+          >
+            <option value="mentions:desc">Sortierung: Erwaehnungen</option>
+            <option value="change24h:desc">Sortierung: 24h Gewinner</option>
+            <option value="change24h:asc">Sortierung: 24h Verlierer</option>
+            <option value="sentimentScore:desc">Sortierung: Sentiment hoch</option>
+            <option value="price:desc">Sortierung: Preis hoch</option>
+            <option value="symbol:asc">Sortierung: Symbol A-Z</option>
+          </select>
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>
-                <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("symbol")}>
-                  Asset <ArrowUpDown className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-              <TableHead>
-                <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort("price")}>
-                  Preis <ArrowUpDown className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-              <TableHead>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => toggleSort("change24h")}
-                >
-                  24h% <ArrowUpDown className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-              <TableHead>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => toggleSort("sentimentScore")}
-                >
-                  Sentiment <ArrowUpDown className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-              <TableHead>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => toggleSort("mentions")}
-                >
-                  Erwaehnungen <ArrowUpDown className="h-3.5 w-3.5" />
-                </button>
-              </TableHead>
-              <TableHead>Signal</TableHead>
-              <TableHead className="text-right">Aktionen</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredRows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-20 text-center text-muted-foreground">
-                  Keine passenden Assets gefunden.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredRows.map((row) => (
-                <TableRow
+      {filteredRows.length === 0 ? (
+        <div className="trading-soft-surface flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-border/60 p-5 text-center">
+          <Inbox className="h-5 w-5 text-slate-500" />
+          <p className="text-sm text-slate-300">Noch keine Signale - Daten werden gesammelt.</p>
+          <p className="text-xs text-slate-500">Passe Suchbegriff oder Filter an.</p>
+        </div>
+      ) : (
+        <>
+          <DesktopTable rows={filteredRows} onRowClick={(symbol) => router.push(`/asset/${symbol}`)} sparklineBySymbol={sparklineBySymbol} />
+          <MobileCards rows={filteredRows} onRowClick={(symbol) => router.push(`/asset/${symbol}`)} sparklineBySymbol={sparklineBySymbol} />
+        </>
+      )}
+    </div>
+  );
+}
+
+interface RowsViewProps {
+  rows: AssetTableRow[];
+  sparklineBySymbol?: Record<string, number[]>;
+  onRowClick: (symbol: string) => void;
+}
+
+function DesktopTable({ rows, sparklineBySymbol, onRowClick }: RowsViewProps) {
+  return (
+    <div className="hidden overflow-hidden rounded-xl border border-border/60 bg-[#0d0f1c] md:block">
+      <div className="trading-scrollbar max-h-[420px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-[#131526]/95 backdrop-blur">
+            <tr className="text-xs uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-4 py-3 text-left">Asset</th>
+              <th className="px-4 py-3 text-left">Preis</th>
+              <th className="px-4 py-3 text-left">24h%</th>
+              <th className="px-4 py-3 text-left">Sentiment</th>
+              <th className="px-4 py-3 text-left">Signal</th>
+              <th className="px-4 py-3 text-right">Mentions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const changeUp = (row.change24h ?? 0) >= 0;
+              const sentimentWidth = Math.max(2, ((row.sentimentScore + 1) / 2) * 100);
+              return (
+                <tr
                   key={row.symbol}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/assets/${row.symbol}`)}
+                  onClick={() => onRowClick(row.symbol)}
+                  className="cursor-pointer border-t border-border/40 transition-all duration-200 hover:bg-[#1a1a2e]"
                 >
-                  <TableCell>
-                    <div className="font-medium text-foreground">{row.symbol}</div>
-                    <div className="text-xs text-muted-foreground">{row.name}</div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {row.isToolSuggested && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          Vorschlag
-                        </Badge>
-                      )}
-                      {row.watchStatus === "watchlist" && (
-                        <Badge variant="outline" className="text-[10px]">
-                          Watchlist
-                        </Badge>
-                      )}
-                      {row.watchStatus === "holding" && (
-                        <Badge variant="outline" className="text-[10px]">
-                          Holding
-                        </Badge>
-                      )}
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-100">{row.symbol}</div>
+                    <div className="text-xs text-slate-500">{row.name}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-slate-100">{formatCurrency(row.price)}</span>
+                      <MiniSparkline
+                        values={sparklineBySymbol?.[row.symbol]}
+                        className="h-5 w-[60px]"
+                        strokeClassName={changeUp ? "text-emerald-400" : "text-red-400"}
+                      />
                     </div>
-                  </TableCell>
-                  <TableCell>{formatCurrency(row.price)}</TableCell>
-                  <TableCell
-                    className={cn(
-                      row.change24h === null
-                        ? "text-muted-foreground"
-                        : row.change24h >= 0
-                          ? "text-green-400"
-                          : "text-red-400"
-                    )}
-                  >
-                    {formatPercent(row.change24h)}
-                  </TableCell>
-                  <TableCell>{row.sentimentScore.toFixed(2)}</TableCell>
-                  <TableCell>{row.mentions}</TableCell>
-                  <TableCell>
-                    <Badge variant={getSignalVariant(row.signal)}>{row.signal.toUpperCase()}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Select
-                        value={row.watchStatus}
-                        onValueChange={(value) =>
-                          updateWatchStatus(row.symbol, value as "none" | "watchlist" | "holding")
-                        }
-                        disabled={updatingSymbol === row.symbol}
-                      >
-                        <SelectTrigger
-                          className="h-8 w-[130px]"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">none</SelectItem>
-                          <SelectItem value="watchlist">watchlist</SelectItem>
-                          <SelectItem value="holding">holding</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          router.push(`/assets/${row.symbol}`);
-                        }}
-                      >
-                        Details
-                      </Button>
+                  </td>
+                  <td className={cn("px-4 py-3 font-mono", changeUp ? "text-emerald-300" : "text-red-300")}>
+                    <span className="inline-flex items-center gap-1">
+                      {changeUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                      {formatPercent(row.change24h)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={cn("h-full rounded-full", row.sentimentScore >= 0 ? "bg-emerald-500" : "bg-red-500")}
+                          style={{ width: `${sentimentWidth}%` }}
+                        />
+                      </div>
+                      <span className="font-mono text-xs text-slate-400">{row.sentimentScore.toFixed(2)}</span>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge className={cn("border-0 uppercase", signalToneClasses(row.signal))}>{row.signal}</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-300">{row.mentions}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+    </div>
+  );
+}
+
+function MobileCards({ rows, sparklineBySymbol, onRowClick }: RowsViewProps) {
+  return (
+    <div className="space-y-2 md:hidden">
+      {rows.map((row) => {
+        const changeUp = (row.change24h ?? 0) >= 0;
+        return (
+          <button
+            key={row.symbol}
+            type="button"
+            className="trading-hover-glow w-full rounded-xl border border-border/50 bg-[#0d0f1c] p-3 text-left"
+            onClick={() => onRowClick(row.symbol)}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div>
+                <p className="text-base font-semibold text-slate-100">{row.symbol}</p>
+                <p className="text-xs text-slate-500">{row.name}</p>
+              </div>
+              <Badge className={cn("border-0 uppercase", signalToneClasses(row.signal))}>{row.signal}</Badge>
+            </div>
+
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="font-mono text-slate-100">{formatCurrency(row.price)}</span>
+              <span className={changeUp ? "text-emerald-300" : "text-red-300"}>{formatPercent(row.change24h)}</span>
+            </div>
+
+            <div className="mb-2 flex items-center justify-between">
+              <MiniSparkline
+                values={sparklineBySymbol?.[row.symbol]}
+                className="h-5 w-[70px]"
+                strokeClassName={changeUp ? "text-emerald-400" : "text-red-400"}
+              />
+              <span className="text-xs text-slate-500">{row.mentions} Erwaehnungen</span>
+            </div>
+
+            <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+              <div
+                className={cn("h-full rounded-full", row.sentimentScore >= 0 ? "bg-emerald-500" : "bg-red-500")}
+                style={{ width: `${Math.max(2, ((row.sentimentScore + 1) / 2) * 100)}%` }}
+              />
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
