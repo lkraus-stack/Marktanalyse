@@ -12,8 +12,6 @@ redis
 alembic
 websockets
 finvader
-transformers
-torch
 pandas
 ta
 slowapi

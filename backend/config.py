@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     perplexity_api_key: Optional[str] = None
     perplexity_daily_budget_usd: float = 0.5
     perplexity_request_cost_usd: float = 0.006
-    finbert_enabled: bool = True
+    finbert_enabled: bool = False
     sentiment_batch_size: int = 16
     sentiment_process_limit: int = 100
     signal_weight_sentiment: float = 0.35
