@@ -1,7 +1,7 @@
 """Ensure trading signal audit columns exist.
 
 Revision ID: 0003_signal_audit_columns
-Revises: 0002_social_raw_sentiment_nullable
+Revises: 0002_social_sentiment_nulls
 Create Date: 2026-03-14 06:10:00
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = "0003_signal_audit_columns"
-down_revision = "0002_social_raw_sentiment_nullable"
+down_revision = "0002_social_sentiment_nulls"
 branch_labels = None
 depends_on = None
 

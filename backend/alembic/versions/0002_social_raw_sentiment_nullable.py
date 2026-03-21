@@ -1,6 +1,6 @@
 """Allow nullable sentiment fields for raw social/news ingestion.
 
-Revision ID: 0002_social_raw_sentiment_nullable
+Revision ID: 0002_social_sentiment_nulls
 Revises: 0001_initial_schema
 Create Date: 2026-03-13 15:00:00
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "0002_social_raw_sentiment_nullable"
+revision = "0002_social_sentiment_nulls"
 down_revision = "0001_initial_schema"
 branch_labels = None
 depends_on = None
