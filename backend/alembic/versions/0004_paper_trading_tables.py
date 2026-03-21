@@ -51,7 +51,7 @@ def upgrade() -> None:
             sa.Column("total_value", sa.Numeric(precision=20, scale=8), nullable=False),
             sa.Column("status", trade_status_enum, nullable=False),
             sa.Column("signal_id", sa.Integer(), nullable=True),
-            sa.Column("is_paper", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+            sa.Column("is_paper", sa.Boolean(), nullable=False, server_default=sa.true()),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("filled_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("notes", sa.Text(), nullable=True),
