@@ -19,11 +19,16 @@ target_metadata = Base.metadata
 
 def _sync_database_url() -> str:
     """Translate async DB URLs to sync dialects for Alembic."""
-    url = get_settings().database_url
+    settings = get_settings()
+    url = settings.neon_database_url or settings.database_url
     if url.startswith("sqlite+aiosqlite://"):
         return url.replace("sqlite+aiosqlite://", "sqlite://", 1)
     if url.startswith("postgresql+asyncpg://"):
         return url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
     return url
 
 
