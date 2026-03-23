@@ -195,6 +195,7 @@ async def health_check() -> Dict[str, Any]:
             "alpaca": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
             "kraken": bool(settings.kraken_api_key and settings.kraken_secret_key),
             "finnhub": bool(settings.finnhub_api_key),
+            "ai_summary": bool(settings.summary_ai_api_key),
             "perplexity": bool(settings.perplexity_api_key),
         },
     }

@@ -16,15 +16,17 @@ logger = logging.getLogger("market_intelligence.services.perplexity")
 
 
 class PerplexityService:
-    """Client for Perplexity Sonar market summaries."""
+    """Client for Sonar-compatible market summaries via configurable AI providers."""
 
     def __init__(self, cache: Optional[SimpleCache] = None) -> None:
         settings = get_settings()
-        self._api_key = settings.perplexity_api_key
-        self._model = "sonar"
+        self._api_key = settings.summary_ai_api_key
+        self._model = settings.summary_ai_model
+        self._provider = settings.ai_provider
+        self._chat_completions_path = settings.summary_ai_chat_completions_path
         self._request_cost_usd = settings.perplexity_request_cost_usd
         self._cache = cache or shared_cache
-        self._client = httpx.AsyncClient(base_url="https://api.perplexity.ai", timeout=httpx.Timeout(30.0))
+        self._client = httpx.AsyncClient(base_url=settings.summary_ai_base_url, timeout=httpx.Timeout(30.0))
         self._budget_limiter = DailyBudgetLimiter(max_usd_per_day=settings.perplexity_daily_budget_usd)
         self._rate_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60, wait_for_slot=True)
 
@@ -33,7 +35,7 @@ class PerplexityService:
         await self._client.aclose()
 
     def has_api_key(self) -> bool:
-        """Return True if Perplexity API key is configured."""
+        """Return True if an AI provider API key is configured."""
         return bool(self._api_key)
 
     async def get_market_summary(self, asset_symbol: str, asset_name: str) -> str:
@@ -65,7 +67,7 @@ class PerplexityService:
 
     async def _chat_completion(self, prompt: str, max_tokens: int) -> str:
         if not self._api_key:
-            raise ExternalAPIError("PERPLEXITY_API_KEY missing.")
+            raise ExternalAPIError("AI_API_KEY/PERPLEXITY_API_KEY missing.")
         await self._budget_limiter.reserve(self._request_cost_usd)
         try:
             return await self._request_completion(prompt, max_tokens)
@@ -87,9 +89,9 @@ class PerplexityService:
         for attempt in range(3):
             try:
                 await self._rate_limiter.acquire()
-                response = await self._client.post("/chat/completions", json=payload, headers=headers)
+                response = await self._client.post(self._chat_completions_path, json=payload, headers=headers)
                 if response.status_code == 429:
-                    raise RateLimitExceededError("Perplexity rate limit reached.")
+                    raise RateLimitExceededError("{0} rate limit reached.".format(self._provider))
                 response.raise_for_status()
                 data = response.json()
                 return self._extract_content(data)
@@ -99,13 +101,15 @@ class PerplexityService:
                 if exc.response.status_code in (500, 502, 503, 504) and attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                     continue
-                raise ExternalAPIError("Perplexity request failed with HTTP {0}.".format(exc.response.status_code)) from exc
+                raise ExternalAPIError(
+                    "{0} request failed with HTTP {1}.".format(self._provider, exc.response.status_code)
+                ) from exc
             except (httpx.TimeoutException, httpx.RequestError) as exc:
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
                     continue
-                raise ExternalAPIError("Perplexity request failed due to network error.") from exc
-        raise ExternalAPIError("Perplexity request failed after retries.")
+                raise ExternalAPIError("{0} request failed due to network error.".format(self._provider)) from exc
+        raise ExternalAPIError("{0} request failed after retries.".format(self._provider))
 
     def _extract_content(self, payload: Dict[str, Any]) -> str:
         choices = payload.get("choices") or []
@@ -124,7 +128,10 @@ class PerplexityService:
             crypto = self._normalize_topic_list(data.get("crypto"))
             return {"stocks": stocks[:5], "crypto": crypto[:5]}
         except json.JSONDecodeError:
-            logger.warning("Perplexity trending response was not valid JSON.", extra={"event": "perplexity_json_parse_failed"})
+            logger.warning(
+                "AI trending response was not valid JSON.",
+                extra={"event": "perplexity_json_parse_failed", "provider": self._provider},
+            )
             return {"stocks": [], "crypto": []}
 
     def _normalize_topic_list(self, value: Any) -> List[str]:

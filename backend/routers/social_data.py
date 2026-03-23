@@ -130,8 +130,8 @@ async def get_market_summary(db: AsyncSession = Depends(get_db)) -> MarketSummar
 @router.post("/market-summary/refresh", response_model=MarketSummaryRefreshResponse)
 async def refresh_market_summary(db: AsyncSession = Depends(get_db)) -> MarketSummaryRefreshResponse:
     """Run one manual Perplexity refresh for immediate AI summaries."""
-    if not get_settings().perplexity_api_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PERPLEXITY_API_KEY fehlt.")
+    if not get_settings().summary_ai_api_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="AI_API_KEY oder PERPLEXITY_API_KEY fehlt.")
 
     collector = DataCollector()
     try:

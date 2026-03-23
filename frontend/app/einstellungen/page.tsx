@@ -258,8 +258,8 @@ export default function EinstellungenPage() {
                 {configuredBadge(Boolean(health?.checks?.api_keys?.finnhub))}
               </div>
               <div className="flex items-center justify-between">
-                <span>Perplexity Key</span>
-                {configuredBadge(Boolean(health?.checks?.api_keys?.perplexity))}
+                <span>KI / Sonar Key</span>
+                {configuredBadge(Boolean(health?.checks?.api_keys?.ai_summary ?? health?.checks?.api_keys?.perplexity))}
               </div>
               <p className="text-xs text-muted-foreground">
                 Hinweise: Keys werden nur serverseitig aus Env-Variablen gelesen und nie im Frontend gespeichert.
@@ -321,8 +321,8 @@ export default function EinstellungenPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div className="flex items-center justify-between">
-              <span>Perplexity / Sonar</span>
-              {configuredBadge(Boolean(health?.checks?.api_keys?.perplexity))}
+              <span>KI / Sonar</span>
+              {configuredBadge(Boolean(health?.checks?.api_keys?.ai_summary ?? health?.checks?.api_keys?.perplexity))}
             </div>
             {marketSummary ? (
               <div className="rounded-md border border-border bg-background/60 p-3">
@@ -334,7 +334,7 @@ export default function EinstellungenPage() {
               </div>
             ) : (
               <p className="rounded-md border border-border p-3 text-xs text-muted-foreground">
-                Noch keine KI-Market Summary vorhanden. Setze zuerst den `PERPLEXITY_API_KEY` im Backend und starte
+                Noch keine KI-Market Summary vorhanden. Setze zuerst `AI_API_KEY` und die KI-URL im Backend und starte
                 danach eine manuelle Aktualisierung oder den Scheduler.
               </p>
             )}
