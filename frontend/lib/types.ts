@@ -71,6 +71,45 @@ export interface SignalResponse {
   expires_at: string | null;
 }
 
+export interface SignalScorecardSymbolResponse {
+  symbol: string;
+  evaluated_signals: number;
+  hit_rate_pct: number;
+  avg_strategy_return_pct: number;
+}
+
+export interface SignalScorecardRowResponse {
+  signal_id: number;
+  symbol: string;
+  signal_type: "buy" | "sell" | "hold";
+  strength: number;
+  created_at: string;
+  entry_price: number;
+  evaluation_price: number;
+  raw_return_pct: number;
+  strategy_return_pct: number;
+  success: boolean;
+  horizon: "24h" | "72h" | "7d";
+  reasoning: string;
+}
+
+export interface SignalScorecardResponse {
+  horizon: "24h" | "72h" | "7d";
+  total_signals: number;
+  evaluated_signals: number;
+  buy_signals: number;
+  sell_signals: number;
+  hold_signals: number;
+  hit_rate_pct: number;
+  avg_strategy_return_pct: number;
+  avg_buy_return_pct: number | null;
+  avg_sell_return_pct: number | null;
+  positive_return_share_pct: number;
+  top_symbols: SignalScorecardSymbolResponse[];
+  weak_symbols: SignalScorecardSymbolResponse[];
+  recent: SignalScorecardRowResponse[];
+}
+
 export interface SignalLeaderboardResponse {
   top_buy: SignalResponse[];
   top_sell: SignalResponse[];
@@ -94,6 +133,64 @@ export interface SocialStatsResponse {
   negative_count: number;
   neutral_count: number;
   avg_sentiment_score: number | null;
+}
+
+export interface DiscoveryCandidateResponse {
+  symbol: string;
+  name: string;
+  asset_type: "stock" | "crypto";
+  exchange: string | null;
+  signal_type: "buy" | "sell" | "hold";
+  strength: number;
+  composite_score: number;
+  risk_bucket: "low" | "medium" | "high";
+  risk_score: number;
+  risk_fit_score: number;
+  volatility_pct: number | null;
+  sentiment_score: number | null;
+  mentions_1h: number;
+  latest_price: number | null;
+  historical_hit_rate_pct: number | null;
+  historical_avg_return_pct: number | null;
+  discovery_score: number;
+  reasoning: string;
+  created_at: string;
+}
+
+export interface DiscoveryAttemptResponse {
+  model: string | null;
+  status: string;
+  status_code: number | null;
+  message: string;
+  response_excerpt: string | null;
+}
+
+export interface DiscoveryAiPickResponse {
+  symbol: string;
+  action: string;
+  thesis: string;
+  risk_note: string;
+  confidence: number | null;
+}
+
+export interface DiscoverySearchResponse {
+  status: "success" | "partial" | "error";
+  query: string;
+  risk_profile: "low" | "balanced" | "high";
+  direction: "all" | "buy" | "sell";
+  asset_type: "all" | "stock" | "crypto";
+  horizon: "24h" | "72h" | "7d";
+  provider: string;
+  primary_model: string;
+  validation_model: string | null;
+  used_model: string | null;
+  market_summary: string | null;
+  local_candidates: DiscoveryCandidateResponse[];
+  ai_summary: string | null;
+  candidates: DiscoveryAiPickResponse[];
+  attempts: DiscoveryAttemptResponse[];
+  errors: DiscoveryAttemptResponse[];
+  raw_response: string | null;
 }
 
 export interface MarketSummaryResponse {

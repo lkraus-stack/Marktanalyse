@@ -127,6 +127,10 @@ class PerplexityService:
         key = "perplexity:trending_topics"
         return await self._cache.get_or_set(key, 4 * 3600, self._trending_uncached)
 
+    async def run_prompt_result(self, prompt: str, *, max_tokens: int = 500) -> AITextResult:
+        """Run a generic analysis prompt using the configured AI provider."""
+        return await self._chat_completion_result(prompt, max_tokens=max_tokens)
+
     async def get_trending_topics_result(self, *, use_cache: bool = False) -> AITrendingTopicsResult:
         """Return trending topics with per-model diagnostics."""
         if use_cache:

@@ -21,6 +21,7 @@ from config import get_settings
 from database import AsyncSessionLocal, create_tables
 from rate_limit import limiter
 from routers.alerts import router as alerts_router
+from routers.discovery import router as discovery_router
 from routers.market_data import router as market_data_router
 from routers.signals import router as signals_router
 from routers.sentiment import router as sentiment_router
@@ -133,6 +134,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(alerts_router)
+app.include_router(discovery_router)
 app.include_router(market_data_router)
 app.include_router(signals_router)
 app.include_router(sentiment_router)

@@ -24,6 +24,7 @@ from models import (
 from services.data_collector import DataCollector
 from services.sentiment_engine import SentimentEngine
 from services.signal_engine import SignalEngine
+from services.signal_lab_service import SignalLabService
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
 
@@ -93,6 +94,51 @@ class SignalBootstrapResponse(BaseModel):
     generated_signals: int
     active_signals_after_run: int
     notes: List[str]
+
+
+class SignalScorecardRowResponse(BaseModel):
+    """One evaluated historical signal for the test bot."""
+
+    signal_id: int
+    symbol: str
+    signal_type: SignalType
+    strength: float
+    created_at: datetime
+    entry_price: float
+    evaluation_price: float
+    raw_return_pct: float
+    strategy_return_pct: float
+    success: bool
+    horizon: str
+    reasoning: str
+
+
+class SignalScorecardSymbolResponse(BaseModel):
+    """Aggregated signal quality metrics for one symbol."""
+
+    symbol: str
+    evaluated_signals: int
+    hit_rate_pct: float
+    avg_strategy_return_pct: float
+
+
+class SignalScorecardResponse(BaseModel):
+    """Aggregated signal quality summary over recent history."""
+
+    horizon: Literal["24h", "72h", "7d"]
+    total_signals: int
+    evaluated_signals: int
+    buy_signals: int
+    sell_signals: int
+    hold_signals: int
+    hit_rate_pct: float
+    avg_strategy_return_pct: float
+    avg_buy_return_pct: Optional[float]
+    avg_sell_return_pct: Optional[float]
+    positive_return_share_pct: float
+    top_symbols: List[SignalScorecardSymbolResponse]
+    weak_symbols: List[SignalScorecardSymbolResponse]
+    recent: List[SignalScorecardRowResponse]
 
 
 @router.get("", response_model=List[SignalResponse])
@@ -199,6 +245,21 @@ async def get_signal_recommendations(
         )
         for signal, asset in rows
     ]
+
+
+@router.get("/scorecard", response_model=SignalScorecardResponse)
+async def get_signal_scorecard(
+    horizon: Literal["24h", "72h", "7d"] = Query(default="72h"),
+    limit: int = Query(default=300, ge=25, le=500),
+    asset_type: Literal["all", "stock", "crypto"] = Query(default="all"),
+) -> SignalScorecardResponse:
+    """Return historical test-bot metrics for recent signals."""
+    service = SignalLabService()
+    try:
+        report = await service.get_scorecard(horizon=horizon, limit=limit, asset_type=asset_type)
+    finally:
+        await service.close()
+    return SignalScorecardResponse(**report)
 
 
 @router.get("/pipeline-status", response_model=SignalPipelineStatusResponse)

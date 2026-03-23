@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Filter, Inbox, SignalHigh } from "lucide-react";
+import { Filter, Inbox, Radar, ShieldCheck, SignalHigh } from "lucide-react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 
@@ -9,12 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchJson, formatCurrency, parseNumeric } from "@/lib/api";
-import type { AssetResponse, SignalResponse } from "@/lib/types";
+import type {
+  AssetResponse,
+  DiscoveryCandidateResponse,
+  SignalResponse,
+  SignalScorecardResponse,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { signalToneClasses } from "@/src/components/ui/theme";
 
 type SortMode = "strength" | "newest" | "assetType";
 type AssetFilter = "all" | "stock" | "crypto";
+type RiskProfile = "low" | "balanced" | "high";
+type Horizon = "24h" | "72h" | "7d";
 
 interface EnrichedSignal extends SignalResponse {
   assetType: "stock" | "crypto";
@@ -33,6 +40,8 @@ export default function SignalsPage() {
   const [sortMode, setSortMode] = useState<SortMode>("strength");
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [minStrength, setMinStrength] = useState(40);
+  const [riskProfile, setRiskProfile] = useState<RiskProfile>("balanced");
+  const [horizon, setHorizon] = useState<Horizon>("72h");
 
   const { data: assets } = useSWR<AssetResponse[]>("/api/assets", fetchJson, {
     refreshInterval: 120000,
@@ -42,6 +51,22 @@ export default function SignalsPage() {
     refreshInterval: 45000,
     revalidateOnFocus: true,
   });
+  const { data: scorecard, isLoading: isScorecardLoading } = useSWR<SignalScorecardResponse>(
+    `/api/signals/scorecard?horizon=${horizon}&asset_type=${assetFilter}&limit=300`,
+    fetchJson,
+    {
+      refreshInterval: 60000,
+      revalidateOnFocus: true,
+    }
+  );
+  const { data: riskCandidates, isLoading: isCandidatesLoading } = useSWR<DiscoveryCandidateResponse[]>(
+    `/api/discovery/candidates?risk_profile=${riskProfile}&direction=all&asset_type=${assetFilter}&horizon=${horizon}&limit=10`,
+    fetchJson,
+    {
+      refreshInterval: 45000,
+      revalidateOnFocus: true,
+    }
+  );
 
   const enrichedSignals = useMemo<EnrichedSignal[]>(() => {
     const assetMap = new Map((assets ?? []).map((asset) => [asset.symbol, asset]));
@@ -91,12 +116,14 @@ export default function SignalsPage() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-100">Signale</h1>
-            <p className="text-sm text-slate-400">Buy/Sell Signale mit Score-Aufschluesselung und Reasoning.</p>
+            <p className="text-sm text-slate-400">
+              Buy/Sell Signale mit Score-Aufschluesselung, Testbot-Rueckblick und risikoorientierten Kandidatenlisten.
+            </p>
           </div>
           <SignalHigh className="h-5 w-5 text-blue-300" />
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <label className="space-y-1 text-xs">
             <span className="text-slate-500">Sortierung</span>
             <select
@@ -140,8 +167,74 @@ export default function SignalsPage() {
               className="h-9 w-full accent-blue-500"
             />
           </label>
+          <label className="space-y-1 text-xs">
+            <span className="text-slate-500">Testbot-Horizont</span>
+            <select
+              value={horizon}
+              onChange={(event) => setHorizon(event.target.value as Horizon)}
+              className="h-9 w-full rounded-lg border border-border/70 bg-[#0d0f1c] px-3 text-sm text-slate-100 outline-none"
+            >
+              <option value="24h">24h</option>
+              <option value="72h">72h</option>
+              <option value="7d">7d</option>
+            </select>
+          </label>
+          <label className="space-y-1 text-xs">
+            <span className="text-slate-500">Risikoprofil</span>
+            <select
+              value={riskProfile}
+              onChange={(event) => setRiskProfile(event.target.value as RiskProfile)}
+              className="h-9 w-full rounded-lg border border-border/70 bg-[#0d0f1c] px-3 text-sm text-slate-100 outline-none"
+            >
+              <option value="low">Defensiv</option>
+              <option value="balanced">Ausgewogen</option>
+              <option value="high">Chancenreich</option>
+            </select>
+          </label>
         </div>
       </header>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        {isScorecardLoading ? (
+          <>
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+          </>
+        ) : (
+          <>
+            <ScoreMetricCard
+              title="Trefferquote"
+              value={`${scorecard?.hit_rate_pct.toFixed(1) ?? "0.0"}%`}
+              subtitle={`${scorecard?.evaluated_signals ?? 0} bewertete Signale`}
+              tone="emerald"
+            />
+            <ScoreMetricCard
+              title="Durchschnitt Ertrag"
+              value={`${scorecard?.avg_strategy_return_pct.toFixed(2) ?? "0.00"}%`}
+              subtitle={`Horizont ${horizon}`}
+              tone="blue"
+            />
+            <ScoreMetricCard
+              title="Positiver Anteil"
+              value={`${scorecard?.positive_return_share_pct.toFixed(1) ?? "0.0"}%`}
+              subtitle="Strategie-Return > 0"
+              tone="amber"
+            />
+            <ScoreMetricCard
+              title="Top Symbol"
+              value={scorecard?.top_symbols[0]?.symbol ?? "--"}
+              subtitle={
+                scorecard?.top_symbols[0]
+                  ? `${scorecard.top_symbols[0].avg_strategy_return_pct.toFixed(2)}% durchschnittlich`
+                  : "Noch keine Historie"
+              }
+              tone="violet"
+            />
+          </>
+        )}
+      </section>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -154,6 +247,132 @@ export default function SignalsPage() {
           <SignalColumn title="Sell Signale" tone="sell" rows={sellSignals} onCardClick={(symbol) => router.push(`/asset/${symbol}`)} />
         </div>
       )}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section className="trading-surface border p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-100">
+              <ShieldCheck className="h-4 w-4 text-emerald-300" />
+              Testbot-Scorecard
+            </h2>
+            <Badge className="border-0 bg-slate-700/30 text-slate-200">{horizon}</Badge>
+          </div>
+          {isScorecardLoading ? (
+            <Skeleton className="h-60 rounded-2xl" />
+          ) : scorecard ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                <ScoreSmallMetric label="Buy Signale" value={String(scorecard.buy_signals)} />
+                <ScoreSmallMetric label="Sell Signale" value={String(scorecard.sell_signals)} />
+                <ScoreSmallMetric
+                  label="Buy Return"
+                  value={scorecard.avg_buy_return_pct === null ? "--" : `${scorecard.avg_buy_return_pct.toFixed(2)}%`}
+                />
+                <ScoreSmallMetric
+                  label="Sell Return"
+                  value={scorecard.avg_sell_return_pct === null ? "--" : `${scorecard.avg_sell_return_pct.toFixed(2)}%`}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <SymbolStatsList title="Bisher stark" rows={scorecard.top_symbols} tone="good" />
+                <SymbolStatsList title="Schwaecher" rows={scorecard.weak_symbols} tone="weak" />
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-medium text-slate-200">Letzte bewertete Signale</p>
+                <div className="space-y-2">
+                  {scorecard.recent.slice(0, 5).map((row) => (
+                    <button
+                      key={row.signal_id}
+                      type="button"
+                      onClick={() => router.push(`/asset/${row.symbol}`)}
+                      className="w-full rounded-xl border border-border/60 bg-slate-900/25 p-3 text-left transition hover:bg-slate-900/40"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-100">{row.symbol}</p>
+                          <p className="text-xs text-slate-500">{new Date(row.created_at).toLocaleString("de-DE")}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={cn("font-mono text-sm", row.strategy_return_pct >= 0 ? "text-emerald-300" : "text-red-300")}>
+                            {row.strategy_return_pct.toFixed(2)}%
+                          </p>
+                          <p className="text-xs text-slate-500">{row.signal_type}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="trading-surface border p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-100">
+              <Radar className="h-4 w-4 text-blue-300" />
+              Risiko-Fokus
+            </h2>
+            <Badge className="border-0 bg-slate-700/30 text-slate-200">{riskProfile}</Badge>
+          </div>
+          {isCandidatesLoading ? (
+            <Skeleton className="h-60 rounded-2xl" />
+          ) : riskCandidates && riskCandidates.length > 0 ? (
+            <div className="space-y-2">
+              {riskCandidates.map((candidate) => (
+                <button
+                  key={`${candidate.symbol}-${candidate.created_at}`}
+                  type="button"
+                  onClick={() => router.push(`/asset/${candidate.symbol}`)}
+                  className="w-full rounded-xl border border-border/60 bg-slate-900/25 p-3 text-left transition hover:bg-slate-900/40"
+                >
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-100">{candidate.symbol}</p>
+                        <Badge className={cn("border-0 uppercase", signalToneClasses(candidate.signal_type))}>
+                          {candidate.signal_type}
+                        </Badge>
+                        <RiskBucketBadge bucket={candidate.risk_bucket} />
+                      </div>
+                      <p className="text-xs text-slate-500">{candidate.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-sm text-slate-100">{candidate.discovery_score.toFixed(1)}</p>
+                      <p className="text-[11px] text-slate-500">Discovery</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+                    <ScoreSmallMetric label="Staerke" value={candidate.strength.toFixed(1)} compact />
+                    <ScoreSmallMetric
+                      label="Trefferquote"
+                      value={candidate.historical_hit_rate_pct === null ? "--" : `${candidate.historical_hit_rate_pct.toFixed(1)}%`}
+                      compact
+                    />
+                    <ScoreSmallMetric
+                      label="Signal-Ertrag"
+                      value={
+                        candidate.historical_avg_return_pct === null ? "--" : `${candidate.historical_avg_return_pct.toFixed(2)}%`
+                      }
+                      compact
+                    />
+                    <ScoreSmallMetric
+                      label="Volatilitaet"
+                      value={candidate.volatility_pct === null ? "--" : `${candidate.volatility_pct.toFixed(2)}%`}
+                      compact
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-xl bg-slate-800/30 p-4 text-sm text-slate-400">
+              <Inbox className="h-5 w-5 text-slate-500" />
+              Noch keine risikoorientierten Kandidaten verfuegbar.
+            </div>
+          )}
+        </section>
+      </div>
     </section>
   );
 }
@@ -241,4 +460,96 @@ function ComponentBar({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+function ScoreMetricCard({
+  title,
+  value,
+  subtitle,
+  tone,
+}: {
+  title: string;
+  value: string;
+  subtitle: string;
+  tone: "emerald" | "blue" | "amber" | "violet";
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-emerald-500/30 bg-emerald-500/5"
+      : tone === "blue"
+        ? "border-blue-500/30 bg-blue-500/5"
+        : tone === "amber"
+          ? "border-amber-500/30 bg-amber-500/5"
+          : "border-violet-500/30 bg-violet-500/5";
+
+  return (
+    <div className={cn("rounded-2xl border p-4", toneClass)}>
+      <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-100">{value}</p>
+      <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
+    </div>
+  );
+}
+
+function ScoreSmallMetric({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn("rounded-xl border border-border/60 bg-slate-900/20 p-2", compact && "py-1.5")}>
+      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 font-mono text-slate-200">{value}</p>
+    </div>
+  );
+}
+
+function SymbolStatsList({
+  title,
+  rows,
+  tone,
+}: {
+  title: string;
+  rows: SignalScorecardResponse["top_symbols"];
+  tone: "good" | "weak";
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-slate-900/20 p-3">
+      <p className="mb-2 text-sm font-medium text-slate-200">{title}</p>
+      <div className="space-y-2">
+        {rows.length === 0 ? (
+          <p className="text-xs text-slate-500">Noch keine Daten.</p>
+        ) : (
+          rows.map((row) => (
+            <div key={row.symbol} className="flex items-center justify-between text-xs">
+              <div>
+                <p className="font-medium text-slate-100">{row.symbol}</p>
+                <p className="text-slate-500">{row.evaluated_signals} Signale</p>
+              </div>
+              <div className="text-right">
+                <p className={cn("font-mono", tone === "good" ? "text-emerald-300" : "text-red-300")}>
+                  {row.avg_strategy_return_pct.toFixed(2)}%
+                </p>
+                <p className="text-slate-500">{row.hit_rate_pct.toFixed(1)}% Treffer</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RiskBucketBadge({ bucket }: { bucket: DiscoveryCandidateResponse["risk_bucket"] }) {
+  if (bucket === "low") {
+    return <Badge className="border-0 bg-emerald-500/15 text-emerald-200">low risk</Badge>;
+  }
+  if (bucket === "high") {
+    return <Badge className="border-0 bg-red-500/15 text-red-200">high risk</Badge>;
+  }
+  return <Badge className="border-0 bg-amber-500/15 text-amber-200">mid risk</Badge>;
 }
