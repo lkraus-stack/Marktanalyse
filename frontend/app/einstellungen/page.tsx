@@ -56,6 +56,14 @@ export default function EinstellungenPage() {
   const [isSeedingDefaults, setIsSeedingDefaults] = useState(false);
   const [isBootstrappingPipeline, setIsBootstrappingPipeline] = useState(false);
   const [isRefreshingSummary, setIsRefreshingSummary] = useState(false);
+  const [summaryRefreshResult, setSummaryRefreshResult] = useState<MarketSummaryRefreshResponse | null>(null);
+  const summaryEndpoint =
+    summaryRefreshResult === null
+      ? null
+      : summaryRefreshResult.chat_completions_path.startsWith("http://") ||
+          summaryRefreshResult.chat_completions_path.startsWith("https://")
+        ? summaryRefreshResult.chat_completions_path
+        : `${summaryRefreshResult.base_url}${summaryRefreshResult.chat_completions_path}`;
 
   const { data: tradingStatus, isLoading: isStatusLoading } = useSWR<TradingStatusResponse>(
     "/api/trading/status",
@@ -167,18 +175,34 @@ export default function EinstellungenPage() {
     setIsRefreshingSummary(true);
     try {
       const response = await fetch("/api/market-summary/refresh", { method: "POST", headers: apiHeaders() });
+      const payload = (await response.json().catch(() => null)) as MarketSummaryRefreshResponse | { detail?: string } | null;
       if (!response.ok) {
-        throw new Error("market summary refresh failed");
+        throw new Error(payload && "detail" in payload && typeof payload.detail === "string" ? payload.detail : "market summary refresh failed");
       }
-      const result = (await response.json()) as MarketSummaryRefreshResponse;
-      if (result.saved_count > 0) {
+      const result = payload as MarketSummaryRefreshResponse;
+      setSummaryRefreshResult(result);
+      if (result.status === "success" && result.saved_count > 0) {
         toast.success("KI-Market Summary aktualisiert.");
+      } else if (result.status === "partial") {
+        const firstError = result.errors[0];
+        toast.error(
+          firstError
+            ? `Teilweise erfolgreich, aber ${firstError.model ?? "ein Modell"} lieferte einen Fehler.`
+            : "Teilweise erfolgreich, aber nicht alle KI-Aufrufe waren sauber."
+        );
+      } else if (result.errors.length > 0) {
+        const firstError = result.errors[0];
+        toast.error(
+          firstError.status_code
+            ? `${firstError.model ?? "KI-Modell"}: HTTP ${firstError.status_code}`
+            : firstError.message
+        );
       } else {
         toast.success("Keine neue KI-Market Summary erzeugt.");
       }
       await Promise.all([mutate("/api/market-summary"), mutate("/api/sentiment/overview")]);
-    } catch {
-      toast.error("KI-Market Summary konnte nicht aktualisiert werden.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "KI-Market Summary konnte nicht aktualisiert werden.");
     } finally {
       setIsRefreshingSummary(false);
     }
@@ -329,6 +353,7 @@ export default function EinstellungenPage() {
                 <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{marketSummary.text_snippet}</p>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {marketSummary.asset_symbol ? `Asset: ${marketSummary.asset_symbol} | ` : ""}
+                  {marketSummary.author ? `Modell: ${marketSummary.author} | ` : ""}
                   Aktualisiert: {new Date(marketSummary.created_at).toLocaleString("de-DE")}
                 </p>
               </div>
@@ -344,6 +369,33 @@ export default function EinstellungenPage() {
                 Market Summary aktualisieren
               </Button>
             </div>
+            {summaryRefreshResult && (
+              <div className="rounded-md border border-border bg-background/60 p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-slate-200">
+                  Letzter Lauf: {summaryRefreshResult.status} | gespeichert: {summaryRefreshResult.saved_count}
+                </p>
+                <p className="mt-1">
+                  Provider: {summaryRefreshResult.provider} | Modell: {summaryRefreshResult.primary_model}
+                  {summaryRefreshResult.validation_model ? ` | Validierung/Fallback: ${summaryRefreshResult.validation_model}` : ""}
+                </p>
+                <p className="mt-1">Verwendet: {summaryRefreshResult.used_models.join(", ") || "noch keines"}</p>
+                <p className="mt-1 break-all">Endpoint: {summaryEndpoint}</p>
+                {summaryRefreshResult.errors.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {summaryRefreshResult.errors.slice(0, 4).map((item, index) => (
+                      <div key={`${item.scope}-${item.model}-${index}`} className="rounded border border-red-500/20 bg-red-500/5 p-2">
+                        <p className="font-medium text-red-200">
+                          {item.scope === "asset" && item.asset_symbol ? `${item.asset_symbol}: ` : ""}
+                          {item.model ?? "KI-Modell"}{item.status_code ? ` | HTTP ${item.status_code}` : ""}
+                        </p>
+                        <p className="mt-1 text-red-100/90">{item.message}</p>
+                        {item.response_excerpt && <p className="mt-1 break-words text-red-100/70">{item.response_excerpt}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               Die Summary dient als KI-Layer fuer Discovery und Validierung. Das eigentliche Handels-Signal bleibt
               weiterhin quantitativ reproduzierbar.

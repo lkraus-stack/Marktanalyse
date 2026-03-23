@@ -232,9 +232,9 @@ class MarketDataScheduler:
     async def _run_perplexity_collection(self) -> None:
         try:
             count = await self._collector.collect_perplexity_summaries()
-            logger.info("Perplexity cycle finished.", extra={"event": "collect_perplexity_cycle", "count": str(count)})
+            logger.info("AI summary cycle finished.", extra={"event": "collect_perplexity_cycle", "count": str(count)})
         except Exception:
-            logger.exception("Perplexity cycle failed.", extra={"event": "collect_perplexity_cycle_failed"})
+            logger.exception("AI summary cycle failed.", extra={"event": "collect_perplexity_cycle_failed"})
 
     async def _run_finvader_cycle(self) -> None:
         try:

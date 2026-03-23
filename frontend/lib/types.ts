@@ -102,10 +102,32 @@ export interface MarketSummaryResponse {
   created_at: string;
   source_url: string | null;
   asset_symbol: string | null;
+  author: string | null;
+}
+
+export interface MarketSummaryAttempt {
+  scope: string;
+  asset_symbol: string | null;
+  model: string | null;
+  status: string;
+  status_code: number | null;
+  message: string;
+  response_excerpt: string | null;
+  provider: string | null;
+  endpoint: string | null;
 }
 
 export interface MarketSummaryRefreshResponse {
+  status: "success" | "partial" | "error";
   saved_count: number;
+  provider: string;
+  base_url: string;
+  chat_completions_path: string;
+  primary_model: string;
+  validation_model: string | null;
+  used_models: string[];
+  attempts: MarketSummaryAttempt[];
+  errors: MarketSummaryAttempt[];
   summary: MarketSummaryResponse | null;
 }
 

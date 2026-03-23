@@ -26,7 +26,7 @@ from services.coingecko_service import CoinGeckoService
 from services.exceptions import ExternalAPIError, InvalidSymbolError, RateLimitExceededError
 from services.finnhub_service import FinnhubService
 from services.news_service import NewsService
-from services.perplexity_service import PerplexityService
+from services.perplexity_service import AIRequestAttempt, PerplexityService
 from services.price_stream import price_pubsub
 from services.reddit_service import RedditService, TARGET_SUBREDDITS
 from services.stocktwits_service import StockTwitsService
@@ -184,42 +184,123 @@ class DataCollector:
         return {"reddit": reddit_count, "stocktwits": stocktwits_count, "news": news_count}
 
     async def collect_perplexity_summaries(self) -> int:
-        """Collect Perplexity summaries for top assets and overall market topics."""
+        """Collect AI summaries for top assets and overall market topics."""
+        report = await self.collect_perplexity_summaries_report(force_refresh=False)
+        return int(report["saved_count"])
+
+    async def collect_perplexity_summaries_report(self, *, force_refresh: bool = False) -> Dict[str, Any]:
+        """Collect AI summaries and return a structured diagnostics report."""
+        report: Dict[str, Any] = {
+            "status": "success",
+            "saved_count": 0,
+            "provider": self._perplexity.provider,
+            "base_url": self._perplexity.base_url,
+            "chat_completions_path": self._perplexity.chat_completions_path,
+            "primary_model": self._perplexity.primary_model,
+            "validation_model": self._perplexity.validation_model,
+            "used_models": [],
+            "attempts": [],
+            "errors": [],
+        }
         if not self._perplexity.has_api_key():
-            logger.warning("Skipping Perplexity collection: API key missing.", extra={"event": "collect_perplexity_skipped"})
-            return 0
+            logger.warning(
+                "Skipping AI summary collection: API key missing.",
+                extra={"event": "collect_perplexity_skipped", "provider": self._perplexity.provider},
+            )
+            report["status"] = "error"
+            report["errors"].append(
+                {
+                    "scope": "config",
+                    "asset_symbol": None,
+                    "model": None,
+                    "status": "error",
+                    "status_code": None,
+                    "message": "AI_API_KEY/PERPLEXITY_API_KEY fehlt.",
+                    "response_excerpt": None,
+                    "provider": self._perplexity.provider,
+                    "endpoint": self._perplexity.chat_completions_path,
+                }
+            )
+            return report
+
         total_saved = 0
         now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
         try:
-            trending = await self._perplexity.get_trending_topics()
-            text = self._format_trending_topics(trending)
-            record = self._build_sentiment_record(
-                asset_id=None,
-                source=SentimentSource.PERPLEXITY,
-                text=text,
-                source_url="perplexity://trending/{0}".format(now.isoformat()),
-                author="perplexity-sonar",
-                created_at=now,
-            )
-            total_saved += await self._insert_sentiment_records([record])
-        except Exception:
-            logger.exception("Perplexity trending topics collection failed.", extra={"event": "collect_perplexity_trending_error"})
-        top_assets = await self._get_top_assets_by_volume(limit=10)
-        for asset in top_assets:
-            try:
-                summary = await self._perplexity.get_market_summary(asset.symbol, asset.name)
+            trending_result = await self._perplexity.get_trending_topics_result(use_cache=not force_refresh)
+            report["used_models"] = self._merge_models(report["used_models"], [trending_result.model])
+            report["attempts"].extend(self._format_ai_attempts(trending_result.attempts, scope="trending"))
+            if trending_result.topics.get("stocks") or trending_result.topics.get("crypto"):
+                text = self._format_trending_topics(trending_result.topics)
                 record = self._build_sentiment_record(
-                    asset_id=asset.id,
+                    asset_id=None,
                     source=SentimentSource.PERPLEXITY,
-                    text=summary,
-                    source_url="perplexity://summary/{0}/{1}".format(asset.symbol, now.isoformat()),
-                    author="perplexity-sonar",
+                    text=text,
+                    source_url="ai://trending/{0}/{1}".format(trending_result.model, now.isoformat()),
+                    author=self._perplexity.format_author(trending_result.model),
                     created_at=now,
                 )
                 total_saved += await self._insert_sentiment_records([record])
-            except Exception:
-                logger.exception("Perplexity summary failed.", extra={"event": "collect_perplexity_asset_error", "symbol": asset.symbol})
-        return total_saved
+            else:
+                report["errors"].append(
+                    {
+                        "scope": "trending",
+                        "asset_symbol": None,
+                        "model": trending_result.model,
+                        "status": "error",
+                        "status_code": None,
+                        "message": "Die KI-Antwort enthielt kein gueltiges Trending-JSON.",
+                        "response_excerpt": self._trim_text(trending_result.raw_content),
+                        "provider": self._perplexity.provider,
+                        "endpoint": self._perplexity.chat_completions_path,
+                    }
+                )
+        except ExternalAPIError as exc:
+            logger.exception(
+                "AI trending topics collection failed.",
+                extra={"event": "collect_perplexity_trending_error", "provider": self._perplexity.provider},
+            )
+            report["attempts"].extend(self._format_ai_error(exc, scope="trending"))
+            report["errors"].extend(self._format_ai_error(exc, scope="trending"))
+
+        top_assets = await self._get_top_assets_by_volume(limit=10)
+        for asset in top_assets:
+            try:
+                summary_result = await self._perplexity.get_market_summary_result(
+                    asset.symbol,
+                    asset.name,
+                    use_cache=not force_refresh,
+                )
+                report["used_models"] = self._merge_models(report["used_models"], [summary_result.model])
+                report["attempts"].extend(
+                    self._format_ai_attempts(summary_result.attempts, scope="asset", asset_symbol=asset.symbol)
+                )
+                record = self._build_sentiment_record(
+                    asset_id=asset.id,
+                    source=SentimentSource.PERPLEXITY,
+                    text=summary_result.content,
+                    source_url="ai://summary/{0}/{1}/{2}".format(summary_result.model, asset.symbol, now.isoformat()),
+                    author=self._perplexity.format_author(summary_result.model),
+                    created_at=now,
+                )
+                total_saved += await self._insert_sentiment_records([record])
+            except ExternalAPIError as exc:
+                logger.exception(
+                    "AI summary failed.",
+                    extra={
+                        "event": "collect_perplexity_asset_error",
+                        "symbol": asset.symbol,
+                        "provider": self._perplexity.provider,
+                    },
+                )
+                report["attempts"].extend(self._format_ai_error(exc, scope="asset", asset_symbol=asset.symbol))
+                report["errors"].extend(self._format_ai_error(exc, scope="asset", asset_symbol=asset.symbol))
+
+        report["saved_count"] = total_saved
+        if report["errors"] and total_saved > 0:
+            report["status"] = "partial"
+        elif report["errors"]:
+            report["status"] = "error"
+        return report
 
     async def start_websockets(self, stock_symbols: Sequence[str], crypto_symbols: Sequence[str]) -> None:
         """Start background WebSocket consumers with auto-reconnect."""
@@ -769,6 +850,77 @@ class DataCollector:
         stocks = ", ".join(topics.get("stocks", [])[:5]) or "n/a"
         crypto = ", ".join(topics.get("crypto", [])[:5]) or "n/a"
         return "Trending stocks: {0}. Trending crypto: {1}.".format(stocks, crypto)
+
+    def _format_ai_attempts(
+        self,
+        attempts: Sequence[AIRequestAttempt],
+        *,
+        scope: str,
+        asset_symbol: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for item in attempts:
+            rows.append(
+                {
+                    "scope": scope,
+                    "asset_symbol": asset_symbol,
+                    "model": item.model,
+                    "status": item.status,
+                    "status_code": item.status_code,
+                    "message": item.error or ("Erfolgreich" if item.status == "success" else "Unbekannter Fehler"),
+                    "response_excerpt": item.response_excerpt,
+                    "provider": item.provider,
+                    "endpoint": item.endpoint,
+                }
+            )
+        return rows
+
+    def _format_ai_error(
+        self,
+        error: ExternalAPIError,
+        *,
+        scope: str,
+        asset_symbol: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if error.attempts:
+            return [
+                {
+                    **entry,
+                    "scope": scope,
+                    "asset_symbol": asset_symbol,
+                }
+                for entry in self._format_ai_attempts(
+                    [item for item in error.attempts if isinstance(item, AIRequestAttempt)],
+                    scope=scope,
+                    asset_symbol=asset_symbol,
+                )
+            ]
+        return [
+            {
+                "scope": scope,
+                "asset_symbol": asset_symbol,
+                "model": error.model,
+                "status": "error",
+                "status_code": error.status_code,
+                "message": str(error),
+                "response_excerpt": error.response_body,
+                "provider": error.provider,
+                "endpoint": error.endpoint,
+            }
+        ]
+
+    def _merge_models(self, existing: Sequence[str], new_items: Sequence[str]) -> List[str]:
+        merged = list(existing)
+        for item in new_items:
+            if item and item not in merged:
+                merged.append(item)
+        return merged
+
+    def _trim_text(self, value: str, limit: int = 280) -> str:
+        normalized = value.strip()
+        if len(normalized) <= limit:
+            return normalized
+        return "{0}...".format(normalized[:limit])
 
     def _rows_from_finnhub_candles(self, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
         if str(payload.get("s", "")).lower() != "ok":

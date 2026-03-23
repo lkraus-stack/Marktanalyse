@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.perplexity.ai"
     ai_chat_completions_path: str = "/chat/completions"
     ai_model: str = "sonar"
+    ai_validation_model: Optional[str] = None
     perplexity_api_key: Optional[str] = None
     perplexity_daily_budget_usd: float = 0.5
     perplexity_request_cost_usd: float = 0.006
@@ -113,6 +114,14 @@ class Settings(BaseSettings):
     def summary_ai_model(self) -> str:
         """Return the configured model id for the summary AI provider."""
         return self.ai_model.strip() or "sonar"
+
+    @property
+    def summary_ai_validation_model(self) -> Optional[str]:
+        """Return an optional secondary model for validation or fallback."""
+        if self.ai_validation_model is None:
+            return None
+        normalized = self.ai_validation_model.strip()
+        return normalized or None
 
 
 @lru_cache
