@@ -8,8 +8,10 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import get_settings
 from database import get_db
 from models import Asset, SentimentLabel, SentimentModel, SentimentRecord, SentimentSource
+from services.data_collector import DataCollector
 
 router = APIRouter(prefix="/api", tags=["social-data"])
 
@@ -58,6 +60,13 @@ class MarketSummaryResponse(BaseModel):
     created_at: datetime
     source_url: Optional[str]
     asset_symbol: Optional[str]
+
+
+class MarketSummaryRefreshResponse(BaseModel):
+    """Manual refresh result for Perplexity/Sonar summaries."""
+
+    saved_count: int
+    summary: Optional[MarketSummaryResponse]
 
 
 @router.get("/social/{symbol}/feed", response_model=List[SocialFeedItem])
@@ -115,13 +124,27 @@ async def get_market_summary(db: AsyncSession = Depends(get_db)) -> MarketSummar
         row = await _latest_perplexity_record(db, require_global=False)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keine Market Summary vorhanden.")
-    record, symbol = row
-    return MarketSummaryResponse(
-        source=record.source,
-        text_snippet=record.text_snippet,
-        created_at=record.created_at,
-        source_url=record.source_url,
-        asset_symbol=symbol,
+    return _summary_from_row(row)
+
+
+@router.post("/market-summary/refresh", response_model=MarketSummaryRefreshResponse)
+async def refresh_market_summary(db: AsyncSession = Depends(get_db)) -> MarketSummaryRefreshResponse:
+    """Run one manual Perplexity refresh for immediate AI summaries."""
+    if not get_settings().perplexity_api_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PERPLEXITY_API_KEY fehlt.")
+
+    collector = DataCollector()
+    try:
+        saved_count = await collector.collect_perplexity_summaries()
+    finally:
+        await collector.shutdown()
+
+    row = await _latest_perplexity_record(db, require_global=True)
+    if row is None:
+        row = await _latest_perplexity_record(db, require_global=False)
+    return MarketSummaryRefreshResponse(
+        saved_count=saved_count,
+        summary=_summary_from_row(row) if row is not None else None,
     )
 
 
@@ -171,3 +194,14 @@ async def _latest_perplexity_record(db: AsyncSession, require_global: bool) -> O
     if row is None:
         return None
     return row[0], row[1]
+
+
+def _summary_from_row(row: tuple[SentimentRecord, Optional[str]]) -> MarketSummaryResponse:
+    record, symbol = row
+    return MarketSummaryResponse(
+        source=record.source,
+        text_snippet=record.text_snippet,
+        created_at=record.created_at,
+        source_url=record.source_url,
+        asset_symbol=symbol,
+    )

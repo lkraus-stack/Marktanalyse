@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Asset, AssetType, PriceData, PriceTimeframe, WatchStatus
 from schemas.asset import AssetCreate, AssetRead
+from services.default_assets import seed_default_assets as seed_default_assets_in_db
 
 router = APIRouter(prefix="/api", tags=["market-data"])
 
@@ -73,6 +74,16 @@ class AssetCsvImportResponse(BaseModel):
     updated: int
     skipped: int
     errors: List[str]
+
+
+class DefaultAssetSeedResponse(BaseModel):
+    """Summary for inserting the built-in starter asset universe."""
+
+    seeded_count: int
+    existing_count: int
+    total_defaults: int
+    active_assets_total: int
+    symbols_added: List[str]
 
 
 @router.get("/prices/{symbol}", response_model=LatestPriceResponse)
@@ -212,6 +223,13 @@ async def create_asset(payload: AssetCreate, db: AsyncSession = Depends(get_db))
     await db.commit()
     await db.refresh(asset)
     return AssetRead.model_validate(asset)
+
+
+@router.post("/assets/seed-defaults", response_model=DefaultAssetSeedResponse)
+async def seed_default_assets(db: AsyncSession = Depends(get_db)) -> DefaultAssetSeedResponse:
+    """Insert the default stock/crypto starter universe once."""
+    summary = await seed_default_assets_in_db(db)
+    return DefaultAssetSeedResponse(**summary)
 
 
 @router.patch("/assets/{symbol}/watch", response_model=AssetRead)

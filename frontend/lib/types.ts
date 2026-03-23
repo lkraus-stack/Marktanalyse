@@ -96,6 +96,27 @@ export interface SocialStatsResponse {
   avg_sentiment_score: number | null;
 }
 
+export interface MarketSummaryResponse {
+  source: "reddit" | "stocktwits" | "news" | "twitter" | "perplexity";
+  text_snippet: string;
+  created_at: string;
+  source_url: string | null;
+  asset_symbol: string | null;
+}
+
+export interface MarketSummaryRefreshResponse {
+  saved_count: number;
+  summary: MarketSummaryResponse | null;
+}
+
+export interface DefaultAssetSeedResponse {
+  seeded_count: number;
+  existing_count: number;
+  total_defaults: number;
+  active_assets_total: number;
+  symbols_added: string[];
+}
+
 export interface SocialFeedItemResponse {
   id: number;
   source: "reddit" | "stocktwits" | "news" | "twitter" | "perplexity";
