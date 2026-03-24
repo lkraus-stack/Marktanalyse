@@ -71,9 +71,14 @@ export default function AssetDetailPage() {
   const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
 
   const { data: assets } = useSWR<AssetResponse[]>("/api/assets", fetchJson, { refreshInterval: 120000 });
-  const { data: latestPrice } = useSWR<PricePointResponse>(symbol ? `/api/prices/${symbol}` : null, fetchJson, {
-    refreshInterval: 60000,
-  });
+  const { data: latestPrice, error: latestPriceError } = useSWR<PricePointResponse>(
+    symbol ? `/api/prices/${symbol}` : null,
+    fetchJson,
+    {
+      refreshInterval: 60000,
+      shouldRetryOnError: false,
+    }
+  );
   const { data: priceHistory, isLoading: isPriceLoading } = useSWR<PricePointResponse[]>(
     symbol ? `/api/prices/${symbol}/history?timeframe=1m&limit=1000` : null,
     fetchJson,
@@ -103,6 +108,8 @@ export default function AssetDetailPage() {
   });
 
   const assetMeta = useMemo(() => assets?.find((item) => item.symbol === symbol), [assets, symbol]);
+  const isUnknownAsset = Boolean(symbol) && assets !== undefined && !assetMeta;
+  const hasNoPriceData = Boolean(assetMeta) && !isPriceLoading && (!priceHistory || priceHistory.length === 0);
 
   const price = parseNumeric(latestPrice?.close ?? null);
   const change24h = useMemo(() => {
@@ -165,6 +172,36 @@ export default function AssetDetailPage() {
     { label: "Momentum", value: normalizeSignalComponent(signal?.momentum_component ?? 0) },
   ];
 
+  if (isUnknownAsset) {
+    return (
+      <section className="space-y-6">
+        <div className="trading-surface space-y-4 p-6">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-100">{symbol} ist noch nicht im Tracking-Universum</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">
+              Dieses Asset ist aktuell nicht in der Datenbank vorhanden. Importiere zuerst Standard-Assets oder fuege das
+              Symbol ueber das Onboarding hinzu.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/einstellungen"
+              className="inline-flex rounded-lg border border-border/70 bg-slate-800/35 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-700/45"
+            >
+              Onboarding oeffnen
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex rounded-lg border border-border/70 bg-slate-800/20 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-700/35"
+            >
+              Zurueck zum Dashboard
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-6">
       <header className="trading-surface p-5">
@@ -196,6 +233,29 @@ export default function AssetDetailPage() {
           </Link>
         </div>
       </header>
+
+      {(hasNoPriceData || latestPriceError) && (
+        <section className="trading-surface border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <p className="font-medium">Fuer {symbol} sind noch keine vollstaendigen Kursdaten vorhanden.</p>
+          <p className="mt-1 text-amber-100/85">
+            Starte zuerst den Pipeline-Bootstrap oder pruefe Scheduler, Marktdaten-Keys und Asset-Onboarding.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href="/einstellungen"
+              className="inline-flex rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100 transition hover:bg-amber-500/20"
+            >
+              Onboarding oeffnen
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex rounded-lg border border-amber-400/20 bg-black/10 px-3 py-2 text-xs text-amber-100 transition hover:bg-black/20"
+            >
+              Zurueck zum Dashboard
+            </Link>
+          </div>
+        </section>
+      )}
 
       <section className="overflow-hidden rounded-2xl bg-[#0a0a14] ring-1 ring-[#1e1e3a]">
         <PriceChart

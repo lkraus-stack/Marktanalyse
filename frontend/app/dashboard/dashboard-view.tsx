@@ -260,6 +260,47 @@ export default function DashboardView() {
   const activeSignals = pipelineStatus?.active_signals ?? signals?.length ?? 0;
   const openAlerts = alerts?.filter((item) => item.is_enabled).length ?? 0;
   const lastAlertMessage = alertHistory?.[0]?.message ?? "Noch keine Alerts - Daten werden gesammelt";
+  const trackedAssetsCount = pipelineStatus?.assets_total ?? assets?.length ?? 0;
+  const pricePoints1m = pipelineStatus?.price_points_1m ?? 0;
+  const aggregatedSentiment1h = pipelineStatus?.aggregated_1h ?? 0;
+  const onboardingState = useMemo(() => {
+    if (isAssetsLoading) {
+      return null;
+    }
+    if (trackedAssetsCount === 0) {
+      return {
+        title: "Noch keine Assets importiert.",
+        description:
+          "Importiere zuerst Standard-Assets. Danach kann die Pipeline Preise, Sentiment und Signale aufbauen.",
+        showBootstrap: false,
+      };
+    }
+    if (pricePoints1m === 0) {
+      return {
+        title: "Assets vorhanden, aber noch keine Preisdaten.",
+        description:
+          "Starte den Pipeline-Bootstrap oder aktiviere den Scheduler, damit aktuelle Kursdaten fuer die Webapp gesammelt werden.",
+        showBootstrap: true,
+      };
+    }
+    if (aggregatedSentiment1h === 0) {
+      return {
+        title: "Preisdaten vorhanden, aber Sentiment und Signale fehlen noch.",
+        description:
+          "Die App hat Assets, aber noch keine verwerteten Sentiment-Aggregationen. Ein Bootstrap-Lauf vervollstaendigt die Datenbasis.",
+        showBootstrap: true,
+      };
+    }
+    if (activeSignals === 0) {
+      return {
+        title: "Datenbasis steht, aber es gibt noch keine aktiven Signale.",
+        description:
+          "Die Signal-Pipeline ist fast bereit. Nach weiteren Datenpunkten oder einem erneuten Lauf erscheinen Empfehlungen automatisch.",
+        showBootstrap: true,
+      };
+    }
+    return null;
+  }, [activeSignals, aggregatedSentiment1h, isAssetsLoading, pricePoints1m, trackedAssetsCount]);
 
   const portfolioSeries = useMemo(() => {
     return (snapshots ?? []).map((item) => item.total_value);
@@ -398,16 +439,41 @@ export default function DashboardView() {
           Signal-Pipeline Daten konnten nicht geladen werden.
         </div>
       )}
-      {pipelineStatus && pipelineStatus.blockers.length > 0 && (
-        <div className="trading-surface flex flex-col gap-3 border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-200 md:flex-row md:items-center md:justify-between">
-          <p className="line-clamp-2">Signal-Pipeline blockiert: {pipelineStatus.blockers.join(" | ")}</p>
-          <Button
-            onClick={bootstrapPipeline}
-            disabled={isBootstrapping}
-            className="h-9 border-amber-400/35 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
-          >
-            {isBootstrapping ? "Starte..." : "Pipeline Bootstrap"}
-          </Button>
+      {onboardingState && (
+        <div className="trading-surface flex flex-col gap-4 border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-100 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3">
+            <div>
+              <p className="font-semibold text-amber-100">{onboardingState.title}</p>
+              <p className="mt-1 max-w-3xl text-amber-100/85">{onboardingState.description}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge className="border-amber-400/35 bg-amber-500/10 text-amber-100">Assets {trackedAssetsCount}</Badge>
+              <Badge className="border-amber-400/35 bg-amber-500/10 text-amber-100">1m Preise {pricePoints1m}</Badge>
+              <Badge className="border-amber-400/35 bg-amber-500/10 text-amber-100">
+                1h Sentiment {aggregatedSentiment1h}
+              </Badge>
+              <Badge className="border-amber-400/35 bg-amber-500/10 text-amber-100">Signale {activeSignals}</Badge>
+            </div>
+            {pipelineStatus && pipelineStatus.blockers.length > 0 && (
+              <p className="rounded-lg border border-amber-400/20 bg-black/10 p-3 text-xs text-amber-100/90">
+                Blocker: {pipelineStatus.blockers.join(" | ")}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => router.push("/einstellungen")}>
+              Onboarding oeffnen
+            </Button>
+            {onboardingState.showBootstrap && (
+              <Button
+                onClick={bootstrapPipeline}
+                disabled={isBootstrapping}
+                className="border-amber-400/35 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30"
+              >
+                {isBootstrapping ? "Starte..." : "Pipeline Bootstrap"}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

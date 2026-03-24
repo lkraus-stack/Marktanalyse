@@ -26,6 +26,20 @@ export function apiHeaders(includeJsonContentType: boolean = false): HeadersInit
   return headers;
 }
 
+export function resolveWebSocketUrl(explicitUrl?: string): string | null {
+  const trimmedUrl = explicitUrl?.trim();
+  if (trimmedUrl) {
+    return trimmedUrl;
+  }
+  if (typeof window === "undefined") {
+    return "ws://localhost:8000/ws/prices";
+  }
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return `ws://${window.location.hostname}:8000/ws/prices`;
+  }
+  return null;
+}
+
 export function parseNumeric(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) {
     return null;

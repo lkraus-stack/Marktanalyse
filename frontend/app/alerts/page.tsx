@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/toast";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { fetchJson } from "@/lib/api";
+import { apiHeaders, fetchJson, resolveWebSocketUrl } from "@/lib/api";
 import type {
   AlertHistoryResponse,
   AlertResponse,
@@ -131,7 +131,7 @@ export default function AlertsPage() {
     void mutate("/api/alerts/history?limit=100");
   }, []);
 
-  const websocketUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/prices";
+  const websocketUrl = resolveWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
   const { status } = useWebSocket(websocketUrl, { onAlert });
   const statusBadge = mapWsStatus(status);
 
@@ -176,7 +176,7 @@ export default function AlertsPage() {
 
       const response = await fetch("/api/alerts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders(true),
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
@@ -194,7 +194,7 @@ export default function AlertsPage() {
   const toggleAlert = async (alert: AlertResponse) => {
     const response = await fetch(`/api/alerts/${alert.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: apiHeaders(true),
       body: JSON.stringify({ is_enabled: !alert.is_enabled }),
     });
     if (!response.ok) {
@@ -206,7 +206,10 @@ export default function AlertsPage() {
   };
 
   const deleteAlert = async (alertId: number) => {
-    const response = await fetch(`/api/alerts/${alertId}`, { method: "DELETE" });
+    const response = await fetch(`/api/alerts/${alertId}`, {
+      method: "DELETE",
+      headers: apiHeaders(),
+    });
     if (!response.ok) {
       toast.error("Alert konnte nicht geloescht werden.");
       return;

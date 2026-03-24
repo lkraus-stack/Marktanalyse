@@ -176,7 +176,10 @@ export default function TradingPage() {
 
   const cancelOrder = async (orderId: number) => {
     try {
-      const response = await fetch(`/api/trading/orders/${orderId}`, { method: "DELETE" });
+      const response = await fetch(`/api/trading/orders/${orderId}`, {
+        method: "DELETE",
+        headers: apiHeaders(),
+      });
       if (!response.ok) {
         throw new Error("cancel failed");
       }
@@ -214,7 +217,10 @@ export default function TradingPage() {
   const runCycle = async (type: "evaluate" | "exits" | "snapshot") => {
     setIsTriggeringCycle(true);
     try {
-      const response = await fetch(`/api/trading/run/${type}`, { method: "POST" });
+      const response = await fetch(`/api/trading/run/${type}`, {
+        method: "POST",
+        headers: apiHeaders(),
+      });
       if (!response.ok) {
         throw new Error("cycle failed");
       }

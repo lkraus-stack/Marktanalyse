@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Bell, Menu, Search, Settings2 } from "lucide-react";
 
-import { fetchJson } from "@/lib/api";
+import { fetchJson, resolveWebSocketUrl } from "@/lib/api";
 import type { AlertResponse, AssetResponse, WebSocketStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -31,7 +31,7 @@ export function AppHeader({ sidebarOffset, onOpenMobileMenu }: AppHeaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
 
-  const websocketUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/prices";
+  const websocketUrl = resolveWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
   const { status } = useWebSocket(websocketUrl);
   const { data: assets } = useSWR<AssetResponse[]>("/api/assets", fetchJson, { refreshInterval: 120000 });
   const { data: alerts } = useSWR<AlertResponse[]>("/api/alerts", fetchJson, { refreshInterval: 45000 });

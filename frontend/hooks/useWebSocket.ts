@@ -39,7 +39,7 @@ interface UseWebSocketOptions {
 }
 
 export function useWebSocket(
-  url: string = "ws://localhost:8000/ws/prices",
+  url: string | null = null,
   options?: UseWebSocketOptions
 ): { status: WebSocketStatus } {
   const socketRef = useRef<WebSocket | null>(null);
@@ -135,6 +135,10 @@ export function useWebSocket(
     if (!shouldReconnectRef.current) {
       return;
     }
+    if (!url) {
+      setStatus("error");
+      return;
+    }
 
     clearReconnectTimer();
     setStatus("connecting");
@@ -183,6 +187,13 @@ export function useWebSocket(
 
   useEffect(() => {
     shouldReconnectRef.current = true;
+    if (!url) {
+      setStatus("error");
+      return () => {
+        shouldReconnectRef.current = false;
+        clearReconnectTimer();
+      };
+    }
     connect();
     return () => {
       shouldReconnectRef.current = false;

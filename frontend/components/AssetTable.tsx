@@ -38,6 +38,7 @@ export function AssetTable({ rows, isLoading, sparklineBySymbol }: AssetTablePro
   const [filter, setFilter] = useState<AssetFilter>("all");
   const [sortColumn, setSortColumn] = useState<SortableColumn>("mentions");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const totalRows = rows?.length ?? 0;
 
   const filteredRows = useMemo(() => {
     const source = rows ?? [];
@@ -120,8 +121,14 @@ export function AssetTable({ rows, isLoading, sparklineBySymbol }: AssetTablePro
       {filteredRows.length === 0 ? (
         <div className="trading-soft-surface flex min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-border/60 p-5 text-center">
           <Inbox className="h-5 w-5 text-slate-500" />
-          <p className="text-sm text-slate-300">Noch keine Signale - Daten werden gesammelt.</p>
-          <p className="text-xs text-slate-500">Passe Suchbegriff oder Filter an.</p>
+          <p className="text-sm text-slate-300">
+            {totalRows === 0 ? "Noch keine Assets im Tracking-Universum." : "Keine Treffer fuer den aktuellen Filter."}
+          </p>
+          <p className="text-xs text-slate-500">
+            {totalRows === 0
+              ? "Importiere zuerst Standard-Assets und starte danach den Pipeline-Bootstrap."
+              : "Passe Suchbegriff oder Filter an."}
+          </p>
         </div>
       ) : (
         <>

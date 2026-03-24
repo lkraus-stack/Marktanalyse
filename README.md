@@ -76,6 +76,7 @@ Optional fuer API-Key-geschuetzte Umgebungen (Frontend):
 
 - `BACKEND_URL` (z. B. `https://your-railway-backend.up.railway.app`)
 - `NEXT_PUBLIC_API_KEY` (nur falls Backend `INTERNAL_API_KEY` erwartet)
+- `NEXT_PUBLIC_WS_URL` (z. B. `wss://your-railway-backend.up.railway.app/ws/prices`)
 
 ## 2) Start per Docker Compose
 
@@ -102,7 +103,14 @@ Stoppen:
 ```
 
 Das Frontend fragt auf dem Dashboard `GET /api/health` ab.  
-`next.config.ts` rewritet diese Requests auf `http://localhost:8000/api/*`.
+`next.config.ts` rewritet alle `/api/*`-Requests standardmaessig auf `http://localhost:8000/api/*`.
+
+Wichtige Hinweise zur Konfiguration:
+
+- Lokal ohne Docker reicht der Fallback auf `http://localhost:8000`.
+- Im Docker-Compose-Setup muss das Frontend `BACKEND_URL=http://backend:8000` bekommen, damit der Rewrite im Container auf den Backend-Service zeigt.
+- Auf Vercel muss `BACKEND_URL` auf deine Railway-Backend-URL zeigen, zum Beispiel `https://dein-backend.up.railway.app`.
+- Wenn dein Backend mit `INTERNAL_API_KEY` geschuetzt ist, muss im Frontend zusaetzlich `NEXT_PUBLIC_API_KEY` gesetzt sein.
 
 ## Datenbankmigrationen (Alembic)
 
@@ -311,8 +319,34 @@ alembic upgrade head
 
 - Backend Dockerfile: `backend/Dockerfile`
 - Railway Config: `railway.toml`
-- Frontend Rewrite Config (Vercel): `frontend/vercel.json`
 - Lokale Prod-Tests: `docker-compose.prod.yml`
+
+### Railway Backend
+
+Pflichtwerte fuer ein lauffaehiges Deployment:
+
+- `DATABASE_URL`
+- `FRONTEND_URL`
+
+Empfohlen bzw. je nach Feature noetig:
+
+- `REDIS_URL`
+- `ENABLE_SCHEDULER=true`
+- `FINNHUB_API_KEY` fuer Aktienpreise und News
+- `INTERNAL_API_KEY` optional fuer geschuetzte API-Zugriffe
+- weitere Broker-/KI-Keys je nach verwendeten Bereichen (`ALPACA_*`, `KRAKEN_*`, `AI_API_KEY` bzw. `PERPLEXITY_API_KEY`)
+
+Wichtig: Das Backend-Container-Image fuehrt beim Start bereits `alembic upgrade head` aus. Wenn du ausserhalb des Docker-Deployments startest, musst du Migrationen weiterhin selbst ausfuehren.
+
+### Vercel Frontend
+
+Setze auf Vercel mindestens diese Variablen:
+
+- `BACKEND_URL=https://dein-backend.up.railway.app`
+- `NEXT_PUBLIC_WS_URL=wss://dein-backend.up.railway.app/ws/prices`
+- `NEXT_PUBLIC_API_KEY=...` nur falls das Backend `INTERNAL_API_KEY` verlangt
+
+Das Frontend nutzt die Next.js-Rewrites in `frontend/next.config.ts`. Eine separate `vercel.json` ist dafuer aktuell nicht noetig.
 
 Start lokaler Production-Stack:
 
@@ -325,3 +359,5 @@ docker compose -f docker-compose.prod.yml up --build
 - `ws://localhost:8000/ws/prices` liefert:
   - Preisupdates (`type=price_update`)
   - Alert-Events (`type=alert_triggered`, `channel=alerts`)
+
+Fuer Deployments solltest du `NEXT_PUBLIC_WS_URL` explizit setzen. Ohne diese Variable verbindet sich das Frontend ausserhalb von localhost absichtlich nicht automatisch per WebSocket, damit keine fehlerhaften localhost-Verbindungen im Browser entstehen.
