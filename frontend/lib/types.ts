@@ -66,9 +66,59 @@ export interface SignalResponse {
   reasoning: string;
   execution_id: string | null;
   strategy_id: string | null;
+  strategy_key: string;
+  strategy_label: string;
   is_active: boolean;
   created_at: string;
   expires_at: string | null;
+}
+
+export interface SignalTradeLinkResponse {
+  trade_id: number;
+  side: "buy" | "sell";
+  status: "pending_confirmation" | "submitted" | "filled" | "canceled" | "rejected" | "failed";
+  quantity: number;
+  total_value: number;
+  is_paper: boolean;
+  is_live: boolean;
+  created_at: string;
+  filled_at: string | null;
+  notes: string | null;
+}
+
+export interface SignalJournalRowResponse {
+  signal_id: number;
+  symbol: string;
+  asset_type: "stock" | "crypto";
+  signal_type: "buy" | "sell" | "hold";
+  strength: number;
+  composite_score: number;
+  price_at_signal: number;
+  reasoning: string;
+  strategy_id: string | null;
+  strategy_key: string;
+  strategy_label: string;
+  strategy_kind: "preset" | "custom" | string;
+  created_at: string;
+  expires_at: string | null;
+  evaluation_horizon: "24h" | "72h" | "7d";
+  evaluation_price: number | null;
+  raw_return_pct: number | null;
+  strategy_return_pct: number | null;
+  evaluation_success: boolean | null;
+  linked_trade: SignalTradeLinkResponse | null;
+}
+
+export interface SignalStrategyResponse {
+  strategy_id: string;
+  strategy_key: string;
+  label: string;
+  kind: "preset" | "custom";
+  status: "active" | "planned";
+  timeframe: string | null;
+  description: string;
+  is_editable: boolean;
+  supports_paper_trade: boolean;
 }
 
 export interface SignalScorecardSymbolResponse {

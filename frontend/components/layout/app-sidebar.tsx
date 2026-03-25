@@ -26,7 +26,7 @@ interface NavigationItem {
 const NAVIGATION_ITEMS: NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/signals", label: "Signale", icon: Signal, aliases: ["/signale"] },
-  { href: "/sentiment", label: "Discovery", icon: SmilePlus },
+  { href: "/discovery", label: "Discovery", icon: SmilePlus, aliases: ["/sentiment"] },
   { href: "/alerts", label: "Alerts", icon: BellRing },
   { href: "/trading", label: "Trading", icon: TrendingUp },
   { href: "/einstellungen", label: "Einstellungen", icon: Settings2 },

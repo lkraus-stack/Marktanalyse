@@ -27,6 +27,80 @@ from services.technical_indicators import TechnicalAnalyzer
 logger = logging.getLogger("market_intelligence.services.signal_engine")
 
 REQUIRED_CANDLES = 50
+COMPOSITE_SIGNAL_PREFIX = "composite_signal_"
+
+SIGNAL_STRATEGY_CATALOG: List[Dict[str, Any]] = [
+    {
+        "strategy_id": "composite_signal_1h",
+        "strategy_key": "composite_1h",
+        "label": "Composite 1H",
+        "kind": "preset",
+        "status": "active",
+        "timeframe": "1h",
+        "description": "Kombiniert Sentiment, Technik, Volumen und Momentum zu einem Live-Signal.",
+        "is_editable": False,
+        "supports_paper_trade": True,
+    },
+    {
+        "strategy_id": "preset_breakout_planned",
+        "strategy_key": "breakout",
+        "label": "Breakout",
+        "kind": "preset",
+        "status": "planned",
+        "timeframe": None,
+        "description": "Geplantes Preset fuer Preis- und Volatilitaetsausbrueche.",
+        "is_editable": False,
+        "supports_paper_trade": True,
+    },
+    {
+        "strategy_id": "custom_strategy_builder",
+        "strategy_key": "custom",
+        "label": "Eigene Strategie",
+        "kind": "custom",
+        "status": "planned",
+        "timeframe": None,
+        "description": "Platzhalter fuer spaeter vom Nutzer definierte Signalregeln.",
+        "is_editable": True,
+        "supports_paper_trade": True,
+    },
+]
+
+
+def get_signal_strategy_catalog() -> List[Dict[str, Any]]:
+    """Return available and planned signal strategies for the UI."""
+    return [dict(item) for item in SIGNAL_STRATEGY_CATALOG]
+
+
+def describe_signal_strategy(strategy_id: Optional[str]) -> Dict[str, Any]:
+    """Map a stored strategy id to a stable UI description."""
+    if strategy_id:
+        for item in SIGNAL_STRATEGY_CATALOG:
+            if item["strategy_id"] == strategy_id:
+                return dict(item)
+        if strategy_id.startswith(COMPOSITE_SIGNAL_PREFIX):
+            timeframe = strategy_id.removeprefix(COMPOSITE_SIGNAL_PREFIX)
+            return {
+                "strategy_id": strategy_id,
+                "strategy_key": "composite_{0}".format(timeframe),
+                "label": "Composite {0}".format(timeframe.upper()),
+                "kind": "preset",
+                "status": "active",
+                "timeframe": timeframe,
+                "description": "Kombiniert Sentiment, Technik, Volumen und Momentum zu einem Live-Signal.",
+                "is_editable": False,
+                "supports_paper_trade": True,
+            }
+    return {
+        "strategy_id": strategy_id or "unknown",
+        "strategy_key": strategy_id or "unknown",
+        "label": "Unbekannte Strategie",
+        "kind": "preset",
+        "status": "active",
+        "timeframe": None,
+        "description": "Signal aus einer nicht katalogisierten Strategie.",
+        "is_editable": False,
+        "supports_paper_trade": True,
+    }
 
 
 class SignalEngine:
@@ -124,7 +198,7 @@ class SignalEngine:
                 coverage=coverage,
             )
 
-            strategy_id = "composite_signal_{0}".format(timeframe_enum.value)
+            strategy_id = "{0}{1}".format(COMPOSITE_SIGNAL_PREFIX, timeframe_enum.value)
             await self._deactivate_previous_active_signals(session, asset_id=asset_id, strategy_id=strategy_id)
 
             signal = TradingSignal(

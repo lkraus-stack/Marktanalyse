@@ -21,10 +21,12 @@ from models import (
     SentimentRecord,
     SentimentSource,
     SignalType,
+    Trade,
     TradingSignal,
 )
 from services.exceptions import ExternalAPIError
 from services.perplexity_service import AIRequestAttempt, PerplexityService
+from services.signal_engine import describe_signal_strategy
 
 RiskProfile = Literal["low", "balanced", "high"]
 DiscoveryDirection = Literal["all", "buy", "sell"]
@@ -72,6 +74,75 @@ class SignalLabService:
             "weak_symbols": report["weak_symbols"],
             "recent": report["recent"],
         }
+
+    async def get_signal_journal(
+        self,
+        *,
+        horizon: ScorecardHorizon = "72h",
+        limit: int = 40,
+        asset_type: DiscoveryAssetType = "all",
+    ) -> List[Dict[str, Any]]:
+        """Return recent signals enriched with evaluation and linked trade state."""
+        safe_limit = max(10, min(limit, 200))
+        async with self._session_factory() as session:
+            signal_rows = await self._load_signal_rows(session, limit=safe_limit, asset_type=asset_type)
+            evaluations = await self._evaluate_signals(session, signal_rows, horizon=horizon)
+            trade_map = await self._load_latest_trade_map(session, [signal.id for signal, _ in signal_rows])
+
+        evaluations_by_signal = {int(item["signal_id"]): item for item in evaluations}
+        rows: List[Dict[str, Any]] = []
+        for signal, asset in signal_rows:
+            evaluation = evaluations_by_signal.get(signal.id)
+            trade = trade_map.get(signal.id)
+            strategy = describe_signal_strategy(signal.strategy_id)
+            rows.append(
+                {
+                    "signal_id": signal.id,
+                    "symbol": asset.symbol,
+                    "asset_type": asset.asset_type.value,
+                    "signal_type": signal.signal_type,
+                    "strength": float(signal.strength),
+                    "composite_score": float(signal.composite_score),
+                    "price_at_signal": float(signal.price_at_signal),
+                    "reasoning": signal.reasoning,
+                    "strategy_id": signal.strategy_id,
+                    "strategy_key": str(strategy["strategy_key"]),
+                    "strategy_label": str(strategy["label"]),
+                    "strategy_kind": str(strategy["kind"]),
+                    "created_at": signal.created_at,
+                    "expires_at": signal.expires_at,
+                    "evaluation_horizon": horizon,
+                    "evaluation_price": (
+                        float(evaluation["evaluation_price"]) if evaluation and evaluation.get("evaluation_price") is not None else None
+                    ),
+                    "raw_return_pct": (
+                        float(evaluation["raw_return_pct"]) if evaluation and evaluation.get("raw_return_pct") is not None else None
+                    ),
+                    "strategy_return_pct": (
+                        float(evaluation["strategy_return_pct"])
+                        if evaluation and evaluation.get("strategy_return_pct") is not None
+                        else None
+                    ),
+                    "evaluation_success": bool(evaluation["success"]) if evaluation else None,
+                    "linked_trade": (
+                        {
+                            "trade_id": trade.id,
+                            "side": trade.side,
+                            "status": trade.status,
+                            "quantity": float(trade.quantity),
+                            "total_value": float(trade.total_value),
+                            "is_paper": bool(trade.is_paper),
+                            "is_live": bool(trade.is_live),
+                            "created_at": trade.created_at,
+                            "filled_at": trade.filled_at,
+                            "notes": trade.notes,
+                        }
+                        if trade is not None
+                        else None
+                    ),
+                }
+            )
+        return rows
 
     async def get_discovery_candidates(
         self,
@@ -260,6 +331,26 @@ class SignalLabService:
         elif asset_type == "crypto":
             query = query.where(Asset.asset_type == AssetType.CRYPTO)
         return list((await session.execute(query)).all())
+
+    async def _load_latest_trade_map(
+        self,
+        session: AsyncSession,
+        signal_ids: Sequence[int],
+    ) -> Dict[int, Trade]:
+        if not signal_ids:
+            return {}
+        query = (
+            select(Trade)
+            .where(Trade.signal_id.in_(list(signal_ids)))
+            .order_by(Trade.signal_id.asc(), Trade.created_at.desc(), Trade.id.desc())
+        )
+        rows = list((await session.execute(query)).scalars().all())
+        latest_by_signal: Dict[int, Trade] = {}
+        for trade in rows:
+            if trade.signal_id is None or trade.signal_id in latest_by_signal:
+                continue
+            latest_by_signal[trade.signal_id] = trade
+        return latest_by_signal
 
     async def _load_active_signal_rows(
         self,

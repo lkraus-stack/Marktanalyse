@@ -14,16 +14,19 @@ from models import (
     AggregatedSentiment,
     AggregationTimeframe,
     Asset,
+    AssetType,
     PriceData,
     PriceTimeframe,
     SentimentRecord,
     SignalType,
+    TradeSide,
+    TradeStatus,
     TradingSignal,
     WatchStatus,
 )
 from services.data_collector import DataCollector
 from services.sentiment_engine import SentimentEngine
-from services.signal_engine import SignalEngine
+from services.signal_engine import SignalEngine, describe_signal_strategy, get_signal_strategy_catalog
 from services.signal_lab_service import SignalLabService
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
@@ -44,6 +47,8 @@ class SignalResponse(BaseModel):
     reasoning: str
     execution_id: Optional[str]
     strategy_id: Optional[str]
+    strategy_key: str
+    strategy_label: str
     is_active: bool
     created_at: datetime
     expires_at: Optional[datetime]
@@ -139,6 +144,60 @@ class SignalScorecardResponse(BaseModel):
     top_symbols: List[SignalScorecardSymbolResponse]
     weak_symbols: List[SignalScorecardSymbolResponse]
     recent: List[SignalScorecardRowResponse]
+
+
+class SignalTradeLinkResponse(BaseModel):
+    """Most recent paper/live trade linked to a signal."""
+
+    trade_id: int
+    side: TradeSide
+    status: TradeStatus
+    quantity: float
+    total_value: float
+    is_paper: bool
+    is_live: bool
+    created_at: datetime
+    filled_at: Optional[datetime]
+    notes: Optional[str]
+
+
+class SignalJournalRowResponse(BaseModel):
+    """Combined row for signal history, evaluation and linked trade state."""
+
+    signal_id: int
+    symbol: str
+    asset_type: AssetType
+    signal_type: SignalType
+    strength: float
+    composite_score: float
+    price_at_signal: float
+    reasoning: str
+    strategy_id: Optional[str]
+    strategy_key: str
+    strategy_label: str
+    strategy_kind: str
+    created_at: datetime
+    expires_at: Optional[datetime]
+    evaluation_horizon: Literal["24h", "72h", "7d"]
+    evaluation_price: Optional[float]
+    raw_return_pct: Optional[float]
+    strategy_return_pct: Optional[float]
+    evaluation_success: Optional[bool]
+    linked_trade: Optional[SignalTradeLinkResponse]
+
+
+class SignalStrategyResponse(BaseModel):
+    """Catalog entry for one available or planned signal strategy."""
+
+    strategy_id: str
+    strategy_key: str
+    label: str
+    kind: Literal["preset", "custom"]
+    status: Literal["active", "planned"]
+    timeframe: Optional[str]
+    description: str
+    is_editable: bool
+    supports_paper_trade: bool
 
 
 @router.get("", response_model=List[SignalResponse])
@@ -245,6 +304,27 @@ async def get_signal_recommendations(
         )
         for signal, asset in rows
     ]
+
+
+@router.get("/strategies", response_model=List[SignalStrategyResponse])
+async def get_signal_strategies() -> List[SignalStrategyResponse]:
+    """Return available and planned signal strategies for the UI."""
+    return [SignalStrategyResponse(**item) for item in get_signal_strategy_catalog()]
+
+
+@router.get("/journal", response_model=List[SignalJournalRowResponse])
+async def get_signal_journal(
+    horizon: Literal["24h", "72h", "7d"] = Query(default="72h"),
+    limit: int = Query(default=40, ge=10, le=200),
+    asset_type: Literal["all", "stock", "crypto"] = Query(default="all"),
+) -> List[SignalJournalRowResponse]:
+    """Return recent signals enriched with evaluation and linked trade state."""
+    service = SignalLabService()
+    try:
+        rows = await service.get_signal_journal(horizon=horizon, limit=limit, asset_type=asset_type)
+    finally:
+        await service.close()
+    return [SignalJournalRowResponse(**item) for item in rows]
 
 
 @router.get("/scorecard", response_model=SignalScorecardResponse)
@@ -445,6 +525,7 @@ async def _get_asset_by_symbol(db: AsyncSession, symbol: str) -> Optional[Asset]
 
 
 def _to_signal_response(signal: TradingSignal, symbol: str) -> SignalResponse:
+    strategy = describe_signal_strategy(signal.strategy_id)
     return SignalResponse(
         symbol=symbol,
         signal_type=signal.signal_type,
@@ -458,6 +539,8 @@ def _to_signal_response(signal: TradingSignal, symbol: str) -> SignalResponse:
         reasoning=signal.reasoning,
         execution_id=signal.execution_id,
         strategy_id=signal.strategy_id,
+        strategy_key=str(strategy["strategy_key"]),
+        strategy_label=str(strategy["label"]),
         is_active=signal.is_active,
         created_at=signal.created_at,
         expires_at=signal.expires_at,

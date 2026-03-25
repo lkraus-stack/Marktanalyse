@@ -168,18 +168,24 @@ export default function SentimentPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-blue-300" />
-              <h1 className="text-2xl font-semibold text-slate-100">Sentiment & Discovery Lab</h1>
+              <h1 className="text-2xl font-semibold text-slate-100">Discovery Lab</h1>
             </div>
             <p className="max-w-3xl text-sm text-slate-400">
-              Sonar sucht nach Discovery-Ideen, lokale Signale werden gegen die Vergangenheit geprueft und das Risiko
-              wird nach Volatilitaet eingeordnet. So siehst du schneller, welche Setups informativ sind und ob sie in
-              der Praxis ueberhaupt etwas gebracht haetten.
+              Discovery ist die nachgelagerte Analyse zu den Signalen. Sonar sucht nach Ideen, lokale Signale werden
+              gegen die Vergangenheit geprueft und das Risiko wird nach Volatilitaet eingeordnet. Die eigentlichen
+              Live-Signale bleiben auf der Signal-Seite bewusst getrennt.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge className="border-0 bg-blue-500/15 text-blue-200">Discovery: Sonar</Badge>
             <Badge className="border-0 bg-violet-500/15 text-violet-200">Validierung/Fallback: GPT OSS</Badge>
             <Badge className="border-0 bg-slate-500/15 text-slate-200">Profil: {riskLabel(riskProfile)}</Badge>
+            <Link
+              href="/signals"
+              className="inline-flex items-center rounded-full border border-border/70 bg-[#12121e] px-3 py-1 text-xs text-slate-200 transition hover:bg-[#191a2e]"
+            >
+              Zu den Live-Signalen
+            </Link>
           </div>
         </div>
       </header>
@@ -229,7 +235,7 @@ export default function SentimentPage() {
                   <Badge variant="secondary">{formatPercent(scorecard.hit_rate_pct)}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Durchschnittlicher Signal-Ertrag</span>
+                  <span>Durchschnittlicher Strategie-Ertrag</span>
                   <Badge variant="secondary">{formatPercent(scorecard.avg_strategy_return_pct)}</Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -294,7 +300,7 @@ export default function SentimentPage() {
               </select>
             </label>
             <label className="space-y-1 text-xs">
-              <span className="text-slate-500">Testbot-Horizont</span>
+              <span className="text-slate-500">Bewertungshorizont</span>
               <select
                 value={horizon}
                 onChange={(event) => setHorizon(event.target.value as Horizon)}
